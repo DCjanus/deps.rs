@@ -50,18 +50,30 @@ fn init_root_logger() -> Logger {
     Logger::root(drain, o!())
 }
 
+fn init_client() -> anyhow::Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
+        .user_agent(DEPS_RS_UA)
+        .redirect(RedirectPolicy::limited(5))
+        .timeout(Duration::from_secs(5));
+
+    if let Some(scheme) = std::env::vars()
+        .filter(|(k, _)| k.eq_ignore_ascii_case("http_proxy"))
+        .map(|(_, v)| v)
+        .next()
+    {
+        let proxy = reqwest::Proxy::all(&scheme)?;
+        builder = builder.proxy(proxy);
+    }
+
+    Ok(builder.build()?)
+}
 #[tokio::main]
 async fn main() {
     let logger = init_root_logger();
 
     let metrics = init_metrics();
 
-    let client = reqwest::Client::builder()
-        .user_agent(DEPS_RS_UA)
-        .redirect(RedirectPolicy::limited(5))
-        .timeout(Duration::from_secs(5))
-        .build()
-        .unwrap();
+    let client = init_client().expect("failed to build http client");
 
     let port = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
