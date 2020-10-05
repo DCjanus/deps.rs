@@ -50,7 +50,7 @@ fn init_root_logger() -> Logger {
     Logger::root(drain, o!())
 }
 
-fn init_client() -> anyhow::Result<reqwest::Client> {
+fn init_client(logger: &Logger) -> anyhow::Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .user_agent(DEPS_RS_UA)
         .redirect(RedirectPolicy::limited(5))
@@ -62,6 +62,7 @@ fn init_client() -> anyhow::Result<reqwest::Client> {
         .next()
     {
         let proxy = reqwest::Proxy::all(&scheme)?;
+        info!(logger, "http client is using proxy: {}", scheme);
         builder = builder.proxy(proxy);
     }
 
@@ -73,7 +74,7 @@ async fn main() {
 
     let metrics = init_metrics();
 
-    let client = init_client().expect("failed to build http client");
+    let client = init_client(&logger).expect("failed to build http client");
 
     let port = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
