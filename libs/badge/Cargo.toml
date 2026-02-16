@@ -17,4 +17,6 @@ rusttype = "0.9"
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
+pretty_assertions = "1"
 serde_urlencoded = "0.7"
+xml_c14n = "0.3"
