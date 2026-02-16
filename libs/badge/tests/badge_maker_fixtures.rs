@@ -22,7 +22,7 @@ fn canonicalize(svg: &str, context: &str) -> String {
             inclusive_ns_prefixes: vec![],
         },
     )
-    .expect(context)
+    .unwrap_or_else(|err| panic!("failed to canonicalize {context}: {err}"))
 }
 
 fn assert_fixture_parity(style_query: &str, fixture_file: &str) {
