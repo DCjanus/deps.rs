@@ -1,5 +1,7 @@
 use badge::{Badge, BadgeOptions, BadgeStyle};
+use pretty_assertions::assert_eq;
 use serde::Deserialize;
+use xml_c14n::{CanonicalizationMode, CanonicalizationOptions, canonicalize_xml};
 
 /// These tests intentionally compare our generated SVG against upstream badge-maker fixtures.
 ///
@@ -11,8 +13,16 @@ struct StyleQuery {
     style: BadgeStyle,
 }
 
-fn normalize_svg(input: &str) -> String {
-    input.split_whitespace().collect::<Vec<_>>().join(" ")
+fn canonicalize(svg: &str, context: &str) -> String {
+    canonicalize_xml(
+        svg,
+        CanonicalizationOptions {
+            mode: CanonicalizationMode::Canonical1_1,
+            keep_comments: true,
+            inclusive_ns_prefixes: vec![],
+        },
+    )
+    .expect(context)
 }
 
 fn assert_fixture_parity(style_query: &str, fixture_file: &str) {
@@ -32,13 +42,16 @@ This test exists as a TODO parity target against badge-maker fixtures."
         style,
     });
 
-    let expected = std::fs::read_to_string(format!(
+    let expected_raw = std::fs::read_to_string(format!(
         "{}/tests/fixtures/{fixture_file}",
         env!("CARGO_MANIFEST_DIR")
     ))
     .unwrap_or_else(|err| panic!("failed to read fixture `{fixture_file}`: {err}"));
 
-    assert_eq!(normalize_svg(&badge.to_svg()), normalize_svg(&expected));
+    let actual = canonicalize(&badge.to_svg(), "generated SVG");
+    let expected = canonicalize(&expected_raw, "fixture SVG");
+
+    assert_eq!(actual, expected);
 }
 
 #[test]
