@@ -6,7 +6,7 @@ use pulldown_cmark::{Parser, html};
 use rustsec::advisory::Advisory;
 use semver::Version;
 
-use super::render_html;
+use super::{render_html, render_html_with_feed};
 use crate::{
     engine::AnalyzeDependenciesOutcome,
     models::{
@@ -15,7 +15,8 @@ use crate::{
         repo::RepoSite,
     },
     server::{
-        BadgeTabMode, ExtraConfig, assets::STATIC_LINKS_JS_PATH, error::ServerError, views::badge,
+        BadgeTabMode, ExtraConfig, assets::STATIC_LINKS_JS_PATH, error::ServerError,
+        subject_feed_url, views::badge,
     },
 };
 
@@ -582,9 +583,16 @@ pub fn response(
     };
 
     if let Some(outcome) = analysis_outcome {
-        Ok(Html::new(render_html(
+        let feed_url = subject_feed_url(
+            &subject_path,
+            extra_config.path.as_deref(),
+            badge_tab_mode == BadgeTabMode::LatestDefault,
+        );
+
+        Ok(Html::new(render_html_with_feed(
             &title,
             render_success(outcome, subject_path, extra_config, badge_tab_mode),
+            Some(&feed_url),
         )))
     } else {
         let html = render_html(&title, render_failure(subject_path));

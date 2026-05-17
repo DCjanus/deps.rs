@@ -42,6 +42,8 @@ tokio = { version = "1.44.2", features = ["rt", "macros", "sync", "time"] }
 toml = { version = "1", default-features = false, features = ["parse", "serde", "preserve_order"] }
 tracing = "0.1.30"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rss = "2.0.13"
+sha-1 = "0.10"
 
 [build-dependencies]
 grass = { version = "0.13", default-features = false }

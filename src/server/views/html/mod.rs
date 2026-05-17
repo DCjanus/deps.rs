@@ -9,6 +9,14 @@ pub mod status;
 use crate::server::{SELF_BASE_URL, assets::STATIC_STYLE_CSS_PATH};
 
 fn render_html<B: Render>(title: impl Into<String>, body: B) -> Markup {
+    render_html_with_feed(title, body, None)
+}
+
+fn render_html_with_feed<B: Render>(
+    title: impl Into<String>,
+    body: B,
+    feed_url: Option<&str>,
+) -> Markup {
     let title = title.into();
 
     html! {
@@ -19,6 +27,9 @@ fn render_html<B: Render>(title: impl Into<String>, body: B) -> Markup {
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (format!("{title} - Deps.rs")) }
                 link rel="icon" type="image/svg+xml" href="/static/logo.svg";
+                @if let Some(feed_url) = feed_url {
+                    link rel="alternate" type="application/rss+xml" title="Dependency status feed" href=(feed_url);
+                }
                 link rel="stylesheet" type="text/css" href=(STATIC_STYLE_CSS_PATH);
                 link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Fira+Sans:400,500,600";
                 link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Source+Code+Pro";
