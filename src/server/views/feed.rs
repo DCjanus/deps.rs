@@ -270,7 +270,10 @@ fn build_item(
     );
 
     FeedItem {
-        title: format!("{dependency_name} is {}", issue_kind.as_str()),
+        title: format!(
+            "{package_name}: {dependency_name} is {}",
+            issue_kind.as_str()
+        ),
         description: item_description(dep),
         package_name,
         dependency_kind,
@@ -394,6 +397,42 @@ mod tests {
         }
     }
 
+    fn workspace_outcome() -> AnalyzeDependenciesOutcome {
+        let mut api_main = IndexMap::new();
+        api_main.insert(
+            "tokio".parse().unwrap(),
+            dep("~1.32", Some("1.32.9"), Some("1.33.0")),
+        );
+
+        let mut worker_main = IndexMap::new();
+        worker_main.insert(
+            "tokio".parse().unwrap(),
+            dep("~1.32", Some("1.32.9"), Some("1.33.0")),
+        );
+
+        AnalyzeDependenciesOutcome {
+            crates: vec![
+                (
+                    "api".parse().unwrap(),
+                    AnalyzedDependencies {
+                        main: api_main,
+                        dev: IndexMap::new(),
+                        build: IndexMap::new(),
+                    },
+                ),
+                (
+                    "worker".parse().unwrap(),
+                    AnalyzedDependencies {
+                        main: worker_main,
+                        dev: IndexMap::new(),
+                        build: IndexMap::new(),
+                    },
+                ),
+            ],
+            duration: std::time::Duration::from_millis(12),
+        }
+    }
+
     fn subject() -> SubjectPath {
         SubjectPath::Crate(CratePath::from_parts("demo", "1.0.0").unwrap())
     }
@@ -457,6 +496,21 @@ mod tests {
         );
 
         assert_ne!(earlier[0].guid, later[0].guid);
+    }
+
+    #[test]
+    fn item_title_includes_package_name() {
+        let items = feed_items(&workspace_outcome(), &repo_subject(), None);
+
+        let titles = items
+            .iter()
+            .map(|item| item.title.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            titles,
+            ["api: tokio is outdated", "worker: tokio is outdated"]
+        );
     }
 
     #[test]
