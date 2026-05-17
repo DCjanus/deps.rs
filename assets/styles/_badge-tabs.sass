@@ -6,16 +6,22 @@
   padding-top: 1.65rem // Reserve space for tabs to prevent height jumping
   // No background or border on the wrapper itself
 
-  .tabs
+  .badge-toolbar
+    align-items: flex-end
+    display: flex
+    justify-content: space-between
     position: absolute
     top: 0
+    left: 0
     right: 0
+    z-index: 1
+
+  .tabs
     border-bottom: none
     flex-shrink: 0
     margin-bottom: 0
     padding: 0
     width: auto
-    z-index: 1 // Sit above the pre block
 
     ul
       border-bottom: none
@@ -73,6 +79,30 @@
         outline: 2px solid $link
         outline-offset: -2px
 
+  .rss-feed-link
+    align-items: center
+    background-color: darken($background, 5%)
+    border-radius: $radius $radius 0 0
+    color: $text-light
+    display: inline-flex
+    height: calc(1.8rem + 1px)
+    justify-content: center
+    margin-bottom: -1px
+    transition: background-color 0.2s, color 0.2s
+    width: 2rem
+
+    &:hover
+      background-color: darken($background, 2%)
+      color: $text-strong
+
+    &:focus-visible
+      outline: 2px solid $link
+      outline-offset: -2px
+
+    svg
+      height: 0.9rem
+      width: 0.9rem
+
   // The code block (pre)
   // We target the specific pre inside our group to apply necessary tweaks
   .badge-code
@@ -81,30 +111,3 @@
     z-index: 0
     margin-top: 0
     padding: 0.5rem 1rem // More compact padding to reduce height
-
-.rss-feed-group
-  display: flex
-  justify-content: flex-end
-  margin-top: 0.75rem
-
-  .rss-feed-link
-    align-items: center
-    border-radius: $radius
-    color: $text
-    display: inline-flex
-    height: 2rem
-    justify-content: center
-    transition: background-color 0.2s, color 0.2s
-    width: 2rem
-
-    &:hover
-      background-color: rgba(255, 255, 255, 0.35)
-      color: $text-strong
-
-    &:focus-visible
-      outline: 2px solid $link
-      outline-offset: 2px
-
-    svg
-      height: 1rem
-      width: 1rem
