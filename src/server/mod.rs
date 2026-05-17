@@ -124,34 +124,6 @@ pub(crate) async fn repo_status_feed(
     ))
 }
 
-#[get("/repo/{site:.+?}/{qual}/{name}/feed.html")]
-pub(crate) async fn repo_status_feed_html(
-    ThinData(engine): ThinData<Engine>,
-    uri: Uri,
-    Path((site, qual, name)): Path<(String, String, String)>,
-) -> actix_web::Result<impl Responder> {
-    let extra_knobs = ExtraConfig::from_query_string(uri.query());
-    let repo_path = match RepoPath::from_parts(&site, &qual, &name) {
-        Ok(repo_path) => repo_path,
-        Err(err) => {
-            tracing::error!(%err);
-            return Err(ServerError::BadRepoPath.into());
-        }
-    };
-
-    let analysis_outcome = engine
-        .analyze_repo_dependencies(repo_path.clone(), &extra_knobs.path)
-        .await
-        .inspect_err(|err| {
-            tracing::error!(%err);
-        })
-        .map_err(|_| ServerError::BadRepoPath)?;
-
-    let subject_path = SubjectPath::Repo(repo_path);
-
-    Ok(views::html::feed::response(analysis_outcome, subject_path))
-}
-
 #[get("/repo/{site:.+?}/{qual}/{name}")]
 pub(crate) async fn repo_status_html(
     ThinData(engine): ThinData<Engine>,
@@ -293,15 +265,6 @@ pub(crate) async fn crate_latest_status_feed(
     crate_status_feed_impl(engine, request, uri, (name, None)).await
 }
 
-#[get("/crate/{name}/latest/feed.html")]
-pub(crate) async fn crate_latest_status_feed_html(
-    ThinData(engine): ThinData<Engine>,
-    uri: Uri,
-    Path((name,)): Path<(String,)>,
-) -> actix_web::Result<impl Responder> {
-    crate_status_feed_html_impl(engine, uri, (name, None)).await
-}
-
 #[get("/crate/{name}/{version}/status.svg")]
 async fn crate_status_svg(
     ThinData(engine): ThinData<Engine>,
@@ -328,15 +291,6 @@ pub(crate) async fn crate_status_feed(
     Path((name, version)): Path<(String, String)>,
 ) -> actix_web::Result<impl Responder> {
     crate_status_feed_impl(engine, request, uri, (name, Some(version))).await
-}
-
-#[get("/crate/{name}/{version}/feed.html")]
-pub(crate) async fn crate_status_feed_html(
-    ThinData(engine): ThinData<Engine>,
-    uri: Uri,
-    Path((name, version)): Path<(String, String)>,
-) -> actix_web::Result<impl Responder> {
-    crate_status_feed_html_impl(engine, uri, (name, Some(version))).await
 }
 
 async fn crate_status_feed_impl(
@@ -394,54 +348,6 @@ async fn crate_status_feed_impl(
         &subject_path,
         &html_url,
     ))
-}
-
-async fn crate_status_feed_html_impl(
-    engine: Engine,
-    _uri: Uri,
-    (name, version): (String, Option<String>),
-) -> actix_web::Result<impl Responder> {
-    let version = match version {
-        Some(ver) => ver,
-        None => {
-            let crate_name = match name.parse() {
-                Ok(name) => name,
-                Err(_) => return Err(ServerError::BadCratePath.into()),
-            };
-
-            match engine
-                .find_latest_stable_crate_release(crate_name, VersionReq::STAR)
-                .await
-            {
-                Ok(Some(latest_rel)) => latest_rel.version.to_string(),
-                Ok(None) => return Err(ServerError::CrateNotFound.into()),
-                Err(err) => {
-                    tracing::error!(%err);
-                    return Err(ServerError::CrateFetchFailed.into());
-                }
-            }
-        }
-    };
-
-    let crate_path = match CratePath::from_parts(&name, &version) {
-        Ok(crate_path) => crate_path,
-        Err(err) => {
-            tracing::error!(%err);
-            return Err(ServerError::BadCratePath.into());
-        }
-    };
-
-    let analysis_outcome = engine
-        .analyze_crate_dependencies(crate_path.clone())
-        .await
-        .inspect_err(|err| {
-            tracing::error!(%err);
-        })
-        .map_err(|_| ServerError::CrateFetchFailed)?;
-
-    let subject_path = SubjectPath::Crate(crate_path);
-
-    Ok(views::html::feed::response(analysis_outcome, subject_path))
 }
 
 async fn crate_status(
