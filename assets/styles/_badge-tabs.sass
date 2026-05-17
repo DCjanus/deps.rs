@@ -1,15 +1,48 @@
 // Badge tabs integrated with standard Bulma pre blocks
+.status-badge-row
+  align-items: center
+  display: inline-flex
+  gap: 0.45rem
+
+  .status-badge
+    display: block
+
+.rss-feed-link
+  align-items: center
+  color: rgba(255, 255, 255, 0.9)
+  display: inline-flex
+  height: 1.15rem
+  justify-content: center
+  line-height: 1
+  opacity: 0.9
+  transition: color 0.2s, opacity 0.2s
+  width: 1.15rem
+
+  &:hover
+    color: $white
+    opacity: 1
+
+  &:focus-visible
+    outline: 2px solid rgba(255, 255, 255, 0.8)
+    outline-offset: 2px
+
+  svg
+    height: 0.8rem
+    width: 0.8rem
+
 .badge-group
   display: flex
   flex-direction: column
   position: relative
-  padding-top: 1.65rem // Reserve space for tabs to prevent height jumping
   // No background or border on the wrapper itself
+
+  &.has-badge-tabs
+    padding-top: 1.65rem // Reserve space for tabs to prevent height jumping
 
   .badge-toolbar
     align-items: flex-end
     display: flex
-    justify-content: space-between
+    justify-content: flex-end
     position: absolute
     top: 0
     left: 0
@@ -78,29 +111,6 @@
       button:focus-visible
         outline: 2px solid $link
         outline-offset: -2px
-
-  .rss-feed-link
-    align-items: center
-    color: rgba(255, 255, 255, 0.9)
-    display: inline-flex
-    height: 1.8rem
-    justify-content: center
-    margin-bottom: 0.2rem
-    opacity: 0.9
-    transition: color 0.2s, opacity 0.2s
-    width: 1.8rem
-
-    &:hover
-      color: $white
-      opacity: 1
-
-    &:focus-visible
-      outline: 2px solid rgba(255, 255, 255, 0.8)
-      outline-offset: 2px
-
-    svg
-      height: 0.9rem
-      width: 0.9rem
 
   // The code block (pre)
   // We target the specific pre inside our group to apply necessary tweaks

@@ -510,17 +510,19 @@ fn render_success(
                         }
                     }
 
-                    img src=(status_data_uri);
+                    div class="status-badge-row" {
+                        img class="status-badge" src=(status_data_uri);
+                        a class="rss-feed-link" href=(feed_url) title="RSS feed" aria-label="RSS feed" {
+                            { (rss_icon) }
+                        }
+                    }
                 }
             }
             div class="hero-footer" {
                 div class="container" {
-                    div class="badge-group" data-badge-root="" {
-                        div class="badge-toolbar" {
-                            a class="rss-feed-link" href=(feed_url) title="RSS feed" aria-label="RSS feed" {
-                                { (rss_icon) }
-                            }
-                            @if show_badge_tabs {
+                    div class=(if show_badge_tabs { "badge-group has-badge-tabs" } else { "badge-group" }) data-badge-root="" {
+                        @if show_badge_tabs {
+                            div class="badge-toolbar" {
                                 div class="tabs is-small" data-badge-tabs="" role="tablist" aria-label="Badge style variants" {
                                     ul {
                                         (render_badge_tab("latest", "Latest release", active_badge_tab == "latest"))

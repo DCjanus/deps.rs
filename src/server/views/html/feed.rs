@@ -10,16 +10,11 @@ use crate::{
 pub(crate) fn response(
     analysis_outcome: AnalyzeDependenciesOutcome,
     subject_path: SubjectPath,
-    feed_xml_url: &str,
 ) -> HttpResponse {
     let title = feed::channel_title(&subject_path);
     let duration = analysis_outcome.duration;
     let items = feed::feed_items(&analysis_outcome, &subject_path);
-    let html = super::render_html_with_feed(
-        &title,
-        render_body(&title, items, duration),
-        Some(feed_xml_url),
-    );
+    let html = super::render_html(&title, render_body(&title, items, duration));
 
     HttpResponse::Ok()
         .insert_header(ContentType::html())

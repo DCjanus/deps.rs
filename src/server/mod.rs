@@ -148,13 +148,8 @@ pub(crate) async fn repo_status_feed_html(
         .map_err(|_| ServerError::BadRepoPath)?;
 
     let subject_path = SubjectPath::Repo(repo_path);
-    let feed_xml_url = subject_feed_url(&subject_path, extra_knobs.path.as_deref(), false);
 
-    Ok(views::html::feed::response(
-        analysis_outcome,
-        subject_path,
-        &feed_xml_url,
-    ))
+    Ok(views::html::feed::response(analysis_outcome, subject_path))
 }
 
 #[get("/repo/{site:.+?}/{qual}/{name}")]
@@ -406,8 +401,6 @@ async fn crate_status_feed_html_impl(
     _uri: Uri,
     (name, version): (String, Option<String>),
 ) -> actix_web::Result<impl Responder> {
-    let is_latest_crate_route = version.is_none();
-
     let version = match version {
         Some(ver) => ver,
         None => {
@@ -447,13 +440,8 @@ async fn crate_status_feed_html_impl(
         .map_err(|_| ServerError::CrateFetchFailed)?;
 
     let subject_path = SubjectPath::Crate(crate_path);
-    let feed_xml_url = subject_feed_url(&subject_path, None, is_latest_crate_route);
 
-    Ok(views::html::feed::response(
-        analysis_outcome,
-        subject_path,
-        &feed_xml_url,
-    ))
+    Ok(views::html::feed::response(analysis_outcome, subject_path))
 }
 
 async fn crate_status(
