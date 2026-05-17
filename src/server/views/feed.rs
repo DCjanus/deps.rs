@@ -114,12 +114,12 @@ fn channel(subject_path: &SubjectPath, html_url: &str, items: Vec<Item>) -> rss:
 }
 
 fn etag_matches(if_none_match: &str, etag: &EntityTag) -> bool {
-    let etag = etag.to_string();
-
-    if_none_match
-        .split(',')
-        .map(str::trim)
-        .any(|candidate| candidate == "*" || candidate == etag)
+    if_none_match.split(',').map(str::trim).any(|candidate| {
+        candidate == "*"
+            || candidate
+                .parse::<EntityTag>()
+                .is_ok_and(|candidate| candidate.weak_eq(etag))
+    })
 }
 
 pub(crate) fn channel_title(subject_path: &SubjectPath) -> String {
@@ -463,6 +463,16 @@ mod tests {
         assert!(first.contains("<ttl>60</ttl>"));
         assert!(!first.contains("lastBuildDate"));
         assert!(!first.contains("pubDate"));
+    }
+
+    #[test]
+    fn if_none_match_uses_weak_etag_comparison() {
+        let etag = EntityTag::new_strong("feed-hash".to_string());
+
+        assert!(etag_matches("\"feed-hash\"", &etag));
+        assert!(etag_matches("W/\"feed-hash\"", &etag));
+        assert!(etag_matches("\"other\", W/\"feed-hash\"", &etag));
+        assert!(!etag_matches("W/\"other\"", &etag));
     }
 
     #[test]
