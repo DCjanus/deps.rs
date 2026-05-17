@@ -81,23 +81,24 @@
 
   .rss-feed-link
     align-items: center
-    background-color: darken($background, 5%)
-    border-radius: $radius $radius 0 0
-    color: $text-light
+    border: 1px solid rgba(255, 255, 255, 0.45)
+    border-radius: $radius
+    color: rgba(255, 255, 255, 0.88)
     display: inline-flex
-    height: calc(1.8rem + 1px)
+    height: 1.8rem
     justify-content: center
-    margin-bottom: -1px
+    margin-bottom: 0.2rem
     transition: background-color 0.2s, color 0.2s
-    width: 2rem
+    width: 1.8rem
 
     &:hover
-      background-color: darken($background, 2%)
-      color: $text-strong
+      background-color: rgba(255, 255, 255, 0.16)
+      border-color: rgba(255, 255, 255, 0.7)
+      color: $white
 
     &:focus-visible
-      outline: 2px solid $link
-      outline-offset: -2px
+      outline: 2px solid rgba(255, 255, 255, 0.8)
+      outline-offset: 2px
 
     svg
       height: 0.9rem
