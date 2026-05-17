@@ -65,9 +65,10 @@ pub(crate) fn response(
     request: &HttpRequest,
     analysis_outcome: &AnalyzeDependenciesOutcome,
     subject_path: &SubjectPath,
+    repo_path: Option<&str>,
     html_url: &str,
 ) -> HttpResponse {
-    let body = render(analysis_outcome, subject_path, html_url);
+    let body = render(analysis_outcome, subject_path, repo_path, html_url);
     let etag_value = format!("{:x}", Sha1::digest(body.as_bytes()));
     let etag = EntityTag::new_strong(etag_value);
 
@@ -91,9 +92,10 @@ pub(crate) fn response(
 pub(crate) fn render(
     analysis_outcome: &AnalyzeDependenciesOutcome,
     subject_path: &SubjectPath,
+    repo_path: Option<&str>,
     html_url: &str,
 ) -> String {
-    let items = feed_items(analysis_outcome, subject_path)
+    let items = feed_items(analysis_outcome, subject_path, repo_path)
         .into_iter()
         .map(|item| rss_item(item, html_url))
         .collect::<Vec<_>>();
@@ -163,9 +165,10 @@ fn category(name: &str) -> rss::Category {
 pub(crate) fn feed_items(
     analysis_outcome: &AnalyzeDependenciesOutcome,
     subject_path: &SubjectPath,
+    repo_path: Option<&str>,
 ) -> Vec<FeedItem> {
     let mut items = Vec::new();
-    let subject_id = subject_id(subject_path);
+    let subject_id = subject_id(subject_path, repo_path);
 
     for (package_name, deps) in &analysis_outcome.crates {
         collect_dependency_items(&mut items, &subject_id, package_name, deps);
@@ -319,15 +322,29 @@ fn item_guid(
     )
 }
 
-fn subject_id(subject_path: &SubjectPath) -> String {
+fn normalized_repo_path(path: Option<&str>) -> Option<String> {
+    path.map(str::trim)
+        .map(|path| path.trim_matches('/'))
+        .filter(|path| !path.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn subject_id(subject_path: &SubjectPath, path: Option<&str>) -> String {
     match subject_path {
         SubjectPath::Repo(repo_path) => {
-            format!(
+            let mut subject_id = format!(
                 "repo:{}/{}/{}",
                 repo_path.site,
                 repo_path.qual.as_ref(),
                 repo_path.name.as_ref()
-            )
+            );
+
+            if let Some(path) = normalized_repo_path(path) {
+                subject_id.push_str(":path=");
+                subject_id.push_str(&path);
+            }
+
+            subject_id
         }
         SubjectPath::Crate(crate_path) => {
             format!("crate:{}/{}", crate_path.name.as_ref(), crate_path.version)
@@ -341,7 +358,10 @@ mod tests {
     use semver::{Version, VersionReq};
 
     use super::*;
-    use crate::models::crates::{AnalyzedDependency, CratePath};
+    use crate::models::{
+        crates::{AnalyzedDependency, CratePath},
+        repo::RepoPath,
+    };
 
     fn dep(
         required: &str,
@@ -378,12 +398,26 @@ mod tests {
         SubjectPath::Crate(CratePath::from_parts("demo", "1.0.0").unwrap())
     }
 
+    fn repo_subject() -> SubjectPath {
+        SubjectPath::Repo(RepoPath::from_parts("github", "deps-rs", "deps.rs").unwrap())
+    }
+
     #[test]
     fn renders_stable_xml_without_request_timing() {
         let outcome = outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0")));
 
-        let first = render(&outcome, &subject(), "https://deps.rs/crate/demo/1.0.0");
-        let second = render(&outcome, &subject(), "https://deps.rs/crate/demo/1.0.0");
+        let first = render(
+            &outcome,
+            &subject(),
+            None,
+            "https://deps.rs/crate/demo/1.0.0",
+        );
+        let second = render(
+            &outcome,
+            &subject(),
+            None,
+            "https://deps.rs/crate/demo/1.0.0",
+        );
 
         assert_eq!(first, second);
         assert!(first.starts_with("<?xml version=\"1.0\" encoding=\"utf-8\"?>"));
@@ -397,10 +431,12 @@ mod tests {
         let earlier = feed_items(
             &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
             &subject(),
+            None,
         );
         let later = feed_items(
             &outcome(dep("~1.32", Some("1.32.9"), Some("1.34.0"))),
             &subject(),
+            None,
         );
 
         assert_eq!(earlier[0].guid, later[0].guid);
@@ -412,10 +448,12 @@ mod tests {
         let earlier = feed_items(
             &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
             &subject(),
+            None,
         );
         let later = feed_items(
             &outcome(dep("~1.33", Some("1.33.5"), Some("1.34.0"))),
             &subject(),
+            None,
         );
 
         assert_ne!(earlier[0].guid, later[0].guid);
@@ -426,6 +464,7 @@ mod tests {
         let items = feed_items(
             &outcome(dep("~1.38", Some("1.38.0"), Some("1.38.0"))),
             &subject(),
+            None,
         );
 
         assert!(items.is_empty());
@@ -438,10 +477,49 @@ mod tests {
         let xml = render(
             &outcome,
             &subject(),
+            None,
             "https://deps.rs/crate/demo/1.0.0?path=a&b=c",
         );
 
         assert!(xml.contains("<![CDATA[Required: >=1.0, <2.0."));
         assert!(xml.contains("https://deps.rs/crate/demo/1.0.0?path=a&amp;b=c"));
+    }
+
+    #[test]
+    fn repo_path_changes_guid() {
+        let root = feed_items(
+            &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
+            &repo_subject(),
+            None,
+        );
+        let service_a = feed_items(
+            &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
+            &repo_subject(),
+            Some("service-a"),
+        );
+        let service_b = feed_items(
+            &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
+            &repo_subject(),
+            Some("service-b"),
+        );
+
+        assert_ne!(root[0].guid, service_a[0].guid);
+        assert_ne!(service_a[0].guid, service_b[0].guid);
+    }
+
+    #[test]
+    fn repo_path_normalizes_guid() {
+        let untrimmed = feed_items(
+            &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
+            &repo_subject(),
+            Some("/service-a/"),
+        );
+        let normalized = feed_items(
+            &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
+            &repo_subject(),
+            Some("service-a"),
+        );
+
+        assert_eq!(untrimmed[0].guid, normalized[0].guid);
     }
 }

@@ -120,6 +120,7 @@ pub(crate) async fn repo_status_feed(
         &request,
         &analysis_outcome,
         &subject_path,
+        extra_knobs.path.as_deref(),
         &html_url,
     ))
 }
@@ -346,6 +347,7 @@ async fn crate_status_feed_impl(
         &request,
         &analysis_outcome,
         &subject_path,
+        None,
         &html_url,
     ))
 }
