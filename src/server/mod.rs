@@ -148,13 +148,11 @@ pub(crate) async fn repo_status_feed_html(
         .map_err(|_| ServerError::BadRepoPath)?;
 
     let subject_path = SubjectPath::Repo(repo_path);
-    let html_url = subject_html_url(&subject_path, extra_knobs.path.as_deref(), false);
     let feed_xml_url = subject_feed_url(&subject_path, extra_knobs.path.as_deref(), false);
 
     Ok(views::html::feed::response(
         analysis_outcome,
         subject_path,
-        &html_url,
         &feed_xml_url,
     ))
 }
@@ -449,13 +447,11 @@ async fn crate_status_feed_html_impl(
         .map_err(|_| ServerError::CrateFetchFailed)?;
 
     let subject_path = SubjectPath::Crate(crate_path);
-    let html_url = subject_html_url(&subject_path, None, is_latest_crate_route);
     let feed_xml_url = subject_feed_url(&subject_path, None, is_latest_crate_route);
 
     Ok(views::html::feed::response(
         analysis_outcome,
         subject_path,
-        &html_url,
         &feed_xml_url,
     ))
 }
@@ -598,26 +594,9 @@ pub(crate) fn subject_feed_url(
     path: Option<&str>,
     use_latest_crate_route: bool,
 ) -> String {
-    subject_feed_url_with_extension(subject_path, path, use_latest_crate_route, "xml")
-}
-
-pub(crate) fn subject_feed_html_url(
-    subject_path: &SubjectPath,
-    path: Option<&str>,
-    use_latest_crate_route: bool,
-) -> String {
-    subject_feed_url_with_extension(subject_path, path, use_latest_crate_route, "html")
-}
-
-fn subject_feed_url_with_extension(
-    subject_path: &SubjectPath,
-    path: Option<&str>,
-    use_latest_crate_route: bool,
-    extension: &str,
-) -> String {
     let query = path.map(|path| serde_urlencoded::to_string([("path", path)]).unwrap());
     let base_url = format!(
-        "{}/feed.{extension}",
+        "{}/feed.xml",
         subject_base_url(subject_path, use_latest_crate_route),
     );
 

@@ -83,13 +83,28 @@
     padding: 0.5rem 1rem // More compact padding to reduce height
 
 .rss-feed-group
+  display: flex
+  justify-content: flex-end
   margin-top: 0.75rem
 
-  p
-    margin-bottom: 0.25rem
+  .rss-feed-link
+    align-items: center
+    border-radius: $radius
+    color: $text
+    display: inline-flex
+    height: 2rem
+    justify-content: center
+    transition: background-color 0.2s, color 0.2s
+    width: 2rem
 
-  .rss-feed-code
-    margin-top: 0
-    padding: 0.5rem 1rem
-    white-space: normal
-    word-break: break-all
+    &:hover
+      background-color: rgba(255, 255, 255, 0.35)
+      color: $text-strong
+
+    &:focus-visible
+      outline: 2px solid $link
+      outline-offset: 2px
+
+    svg
+      height: 1rem
+      width: 1rem
