@@ -16,7 +16,7 @@ use crate::{
     },
     server::{
         BadgeTabMode, ExtraConfig, assets::STATIC_LINKS_JS_PATH, error::ServerError,
-        subject_feed_url, views::badge,
+        subject_feed_html_url, subject_feed_url, views::badge,
     },
 };
 
@@ -493,6 +493,11 @@ fn render_success(
         extra_config.path.as_deref(),
         badge_tab_mode == BadgeTabMode::LatestDefault,
     );
+    let feed_html_url = subject_feed_html_url(
+        &subject_path,
+        extra_config.path.as_deref(),
+        badge_tab_mode == BadgeTabMode::LatestDefault,
+    );
 
     html! {
         section class=(format!("hero {hero_class}")) {
@@ -536,6 +541,10 @@ fn render_success(
                         p class="is-size-7 has-text-weight-semibold" { "RSS feed" }
                         pre class="is-size-7 rss-feed-code" {
                             a href=(feed_url) { (feed_url) }
+                        }
+                        p class="is-size-7 has-text-weight-semibold" { "Readable feed" }
+                        pre class="is-size-7 rss-feed-code" {
+                            a href=(feed_html_url) { (feed_html_url) }
                         }
                     }
                 }

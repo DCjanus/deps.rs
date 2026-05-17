@@ -3,6 +3,7 @@ use std::time::Duration;
 use maud::{DOCTYPE, Markup, Render, html};
 
 pub mod error;
+pub mod feed;
 pub mod index;
 pub mod status;
 

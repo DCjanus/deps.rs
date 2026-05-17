@@ -19,14 +19,14 @@ use crate::{
 const FEED_TTL_MINUTES: &str = "60";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum DependencyKind {
+pub(crate) enum DependencyKind {
     Main,
     Dev,
     Build,
 }
 
 impl DependencyKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             DependencyKind::Main => "main",
             DependencyKind::Dev => "dev",
@@ -36,13 +36,13 @@ impl DependencyKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum FeedIssueKind {
+pub(crate) enum FeedIssueKind {
     Outdated,
     Insecure,
 }
 
 impl FeedIssueKind {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             FeedIssueKind::Outdated => "outdated",
             FeedIssueKind::Insecure => "insecure",
@@ -51,14 +51,14 @@ impl FeedIssueKind {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct FeedItem {
-    package_name: String,
-    dependency_kind: DependencyKind,
-    dependency_name: String,
-    issue_kind: FeedIssueKind,
-    title: String,
-    description: String,
-    guid: String,
+pub(crate) struct FeedItem {
+    pub(crate) package_name: String,
+    pub(crate) dependency_kind: DependencyKind,
+    pub(crate) dependency_name: String,
+    pub(crate) issue_kind: FeedIssueKind,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) guid: String,
 }
 
 pub(crate) fn response(
@@ -98,6 +98,10 @@ pub(crate) fn render(
         .map(|item| rss_item(item, html_url))
         .collect::<Vec<_>>();
 
+    channel(subject_path, html_url, items).to_string()
+}
+
+fn channel(subject_path: &SubjectPath, html_url: &str, items: Vec<Item>) -> rss::Channel {
     ChannelBuilder::default()
         .title(channel_title(subject_path))
         .link(html_url)
@@ -105,7 +109,6 @@ pub(crate) fn render(
         .ttl(Some(FEED_TTL_MINUTES.to_string()))
         .items(items)
         .build()
-        .to_string()
 }
 
 fn etag_matches(if_none_match: &str, etag: &EntityTag) -> bool {
@@ -117,7 +120,7 @@ fn etag_matches(if_none_match: &str, etag: &EntityTag) -> bool {
         .any(|candidate| candidate == "*" || candidate == etag)
 }
 
-fn channel_title(subject_path: &SubjectPath) -> String {
+pub(crate) fn channel_title(subject_path: &SubjectPath) -> String {
     match subject_path {
         SubjectPath::Repo(repo_path) => {
             format!(
@@ -157,7 +160,7 @@ fn category(name: &str) -> rss::Category {
     CategoryBuilder::default().name(name).build()
 }
 
-fn feed_items(
+pub(crate) fn feed_items(
     analysis_outcome: &AnalyzeDependenciesOutcome,
     subject_path: &SubjectPath,
 ) -> Vec<FeedItem> {
@@ -383,6 +386,7 @@ mod tests {
         let second = render(&outcome, &subject(), "https://deps.rs/crate/demo/1.0.0");
 
         assert_eq!(first, second);
+        assert!(first.starts_with("<?xml version=\"1.0\" encoding=\"utf-8\"?>"));
         assert!(first.contains("<ttl>60</ttl>"));
         assert!(!first.contains("lastBuildDate"));
         assert!(!first.contains("pubDate"));
