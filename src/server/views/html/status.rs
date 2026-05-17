@@ -488,6 +488,11 @@ fn render_success(
     };
     let latest_panel_hidden = active_badge_tab != "latest";
     let pinned_panel_hidden = active_badge_tab != "pinned";
+    let feed_url = subject_feed_url(
+        &subject_path,
+        extra_config.path.as_deref(),
+        badge_tab_mode == BadgeTabMode::LatestDefault,
+    );
 
     html! {
         section class=(format!("hero {hero_class}")) {
@@ -525,6 +530,12 @@ fn render_success(
                             (render_badge_panel("pinned", &pinned_badge_markdown, pinned_panel_hidden))
                         } @else {
                             pre class="is-size-7 badge-code" { (pinned_badge_markdown) }
+                        }
+                    }
+                    div class="rss-feed-group" {
+                        p class="is-size-7 has-text-weight-semibold" { "RSS feed" }
+                        pre class="is-size-7 rss-feed-code" {
+                            a href=(feed_url) { (feed_url) }
                         }
                     }
                 }
