@@ -100,12 +100,17 @@ pub(crate) fn render(
         .map(|item| rss_item(item, html_url))
         .collect::<Vec<_>>();
 
-    channel(subject_path, html_url, items).to_string()
+    channel(subject_path, repo_path, html_url, items).to_string()
 }
 
-fn channel(subject_path: &SubjectPath, html_url: &str, items: Vec<Item>) -> rss::Channel {
+fn channel(
+    subject_path: &SubjectPath,
+    repo_path: Option<&str>,
+    html_url: &str,
+    items: Vec<Item>,
+) -> rss::Channel {
     ChannelBuilder::default()
-        .title(channel_title(subject_path))
+        .title(channel_title(subject_path, repo_path))
         .link(html_url)
         .description("Outdated and insecure dependency status reported by deps.rs.")
         .ttl(Some(FEED_TTL_MINUTES.to_string()))
@@ -122,15 +127,22 @@ fn etag_matches(if_none_match: &str, etag: &EntityTag) -> bool {
     })
 }
 
-pub(crate) fn channel_title(subject_path: &SubjectPath) -> String {
+pub(crate) fn channel_title(subject_path: &SubjectPath, path: Option<&str>) -> String {
     match subject_path {
         SubjectPath::Repo(repo_path) => {
-            format!(
-                "deps.rs: {}/{}/{} dependency status",
+            let mut name = format!(
+                "{}/{}/{}",
                 repo_path.site,
                 repo_path.qual.as_ref(),
                 repo_path.name.as_ref()
-            )
+            );
+
+            if let Some(path) = normalized_repo_path(path) {
+                name.push('/');
+                name.push_str(&path);
+            }
+
+            format!("deps.rs: {name} dependency status")
         }
         SubjectPath::Crate(crate_path) => {
             format!(
@@ -521,6 +533,20 @@ mod tests {
             titles,
             ["api: tokio is outdated", "worker: tokio is outdated"]
         );
+    }
+
+    #[test]
+    fn repo_path_is_in_channel_title() {
+        let xml = render(
+            &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
+            &repo_subject(),
+            Some("/service-a/"),
+            "https://deps.rs/repo/github/deps-rs/deps.rs?path=service-a",
+        );
+
+        assert!(xml.contains(
+            "<title>deps.rs: github/deps-rs/deps.rs/service-a dependency status</title>"
+        ));
     }
 
     #[test]
