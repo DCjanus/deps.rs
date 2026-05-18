@@ -284,7 +284,7 @@ fn build_item(
     FeedItem {
         title: format!(
             "{package_name}: {dependency_name} is {}",
-            issue_kind.as_str()
+            issue_label(issue_kind, dep)
         ),
         description: item_description(dep),
         package_name,
@@ -292,6 +292,14 @@ fn build_item(
         dependency_name,
         issue_kind,
         guid,
+    }
+}
+
+fn issue_label(issue_kind: FeedIssueKind, dep: &AnalyzedDependency) -> &'static str {
+    match issue_kind {
+        FeedIssueKind::Outdated => issue_kind.as_str(),
+        FeedIssueKind::Insecure if dep.is_always_insecure() => issue_kind.as_str(),
+        FeedIssueKind::Insecure => "maybe insecure",
     }
 }
 
@@ -370,6 +378,7 @@ fn subject_id(subject_path: &SubjectPath, path: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use indexmap::IndexMap;
+    use rustsec::Advisory;
     use semver::{Version, VersionReq};
 
     use super::*;
@@ -390,6 +399,32 @@ mod tests {
             latest: latest.map(|version| Version::parse(version).unwrap()),
             vulnerabilities: Vec::new(),
         }
+    }
+
+    fn advisory() -> Advisory {
+        r#"```toml
+[advisory]
+id = "RUSTSEC-2001-2101"
+package = "tokio"
+date = "2001-02-03"
+url = "https://rustsec.org/advisories/RUSTSEC-2001-2101.html"
+
+[versions]
+patched = [">= 1.2.3"]
+```
+
+# Example vulnerability
+
+Example advisory.
+"#
+        .parse()
+        .unwrap()
+    }
+
+    fn vulnerable_dep(latest: &str) -> AnalyzedDependency {
+        let mut dep = dep("<2.0", Some(latest), Some(latest));
+        dep.vulnerabilities.push(advisory());
+        dep
     }
 
     fn outcome(dependency: AnalyzedDependency) -> AnalyzeDependenciesOutcome {
@@ -533,6 +568,20 @@ mod tests {
             titles,
             ["api: tokio is outdated", "worker: tokio is outdated"]
         );
+    }
+
+    #[test]
+    fn insecure_title_distinguishes_maybe_insecure_dependencies() {
+        let items = feed_items(&outcome(vulnerable_dep("1.2.3")), &subject(), None);
+
+        assert_eq!(items[0].title, "demo: tokio is maybe insecure");
+    }
+
+    #[test]
+    fn insecure_title_keeps_always_insecure_dependencies_strong() {
+        let items = feed_items(&outcome(vulnerable_dep("1.2.2")), &subject(), None);
+
+        assert_eq!(items[0].title, "demo: tokio is insecure");
     }
 
     #[test]
