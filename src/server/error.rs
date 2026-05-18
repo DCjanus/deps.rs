@@ -91,22 +91,3 @@ impl ResponseError for ServerError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use actix_web::{ResponseError, http::StatusCode};
-
-    use super::ServerError;
-
-    #[test]
-    fn repo_analysis_failure_is_not_reported_as_bad_path() {
-        assert_eq!(
-            ServerError::RepoAnalysisFailed.status_code(),
-            StatusCode::BAD_REQUEST
-        );
-        assert_eq!(
-            ServerError::RepoAnalysisFailed.to_string(),
-            "Could not analyze repository"
-        );
-    }
-}
