@@ -491,7 +491,9 @@ pub(crate) fn subject_status_url(
     use_latest_crate_route: bool,
 ) -> Url {
     let mut url = subject_base_url(subject_path, use_latest_crate_route);
-    append_path_query(&mut url, path);
+    if let Some(path) = path {
+        url.query_pairs_mut().append_pair("path", path);
+    }
 
     url
 }
@@ -505,8 +507,12 @@ pub(crate) fn subject_feed_url(
     use_latest_crate_route: bool,
 ) -> Url {
     let mut url = subject_base_url(subject_path, use_latest_crate_route);
-    push_path_segments(&mut url, ["feed.xml"]);
-    append_path_query(&mut url, path);
+    url.path_segments_mut()
+        .expect("base URL must support path segments")
+        .push("feed.xml");
+    if let Some(path) = path {
+        url.query_pairs_mut().append_pair("path", path);
+    }
 
     url
 }
@@ -519,21 +525,25 @@ fn subject_base_url(subject_path: &SubjectPath, use_latest_crate_route: bool) ->
 
     match subject_path {
         SubjectPath::Repo(repo_path) => {
-            push_path_segments(&mut url, ["repo"]);
+            let mut segments = url
+                .path_segments_mut()
+                .expect("base URL must support path segments");
 
+            segments.push("repo");
             let site = repo_path.site.to_string();
-            push_path_segments(&mut url, site.split('/'));
-            push_path_segments(&mut url, [repo_path.qual.as_ref(), repo_path.name.as_ref()]);
+            segments.extend(site.split('/'));
+            segments.extend([repo_path.qual.as_ref(), repo_path.name.as_ref()]);
         }
         SubjectPath::Crate(crate_path) if use_latest_crate_route => {
-            push_path_segments(&mut url, ["crate", crate_path.name.as_ref(), "latest"]);
+            url.path_segments_mut()
+                .expect("base URL must support path segments")
+                .extend(["crate", crate_path.name.as_ref(), "latest"]);
         }
         SubjectPath::Crate(crate_path) => {
             let version = crate_path.version.to_string();
-            push_path_segments(
-                &mut url,
-                ["crate", crate_path.name.as_ref(), version.as_str()],
-            );
+            url.path_segments_mut()
+                .expect("base URL must support path segments")
+                .extend(["crate", crate_path.name.as_ref(), version.as_str()]);
         }
     };
 
@@ -545,24 +555,6 @@ fn subject_base_url(subject_path: &SubjectPath, use_latest_crate_route: bool) ->
 /// 例如默认配置会生成 `http://localhost:8080`。
 fn self_base_url() -> Url {
     Url::parse(SELF_BASE_URL.as_str()).expect("BASE_URL must be a valid absolute URL")
-}
-
-/// 给 URL 追加 path segments。
-///
-/// 例如在 `https://deps.rs/repo/github/deps-rs/deps.rs` 后追加 `feed.xml`。
-fn push_path_segments<'a>(url: &mut Url, segments: impl IntoIterator<Item = &'a str>) {
-    url.path_segments_mut()
-        .expect("base URL must support path segments")
-        .extend(segments);
-}
-
-/// 给 URL 按需追加 repo 子路径 query。
-///
-/// 例如 `path=service-a` 会生成 `?path=service-a`。
-fn append_path_query(url: &mut Url, path: Option<&str>) {
-    if let Some(path) = path {
-        url.query_pairs_mut().append_pair("path", path);
-    }
 }
 
 pub(crate) fn static_files(cfg: &mut ServiceConfig) {
