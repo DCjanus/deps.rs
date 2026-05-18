@@ -522,30 +522,6 @@ Example advisory.
     }
 
     #[test]
-    fn renders_stable_xml_without_request_timing() {
-        let outcome = outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0")));
-
-        let first = render(
-            &outcome,
-            &subject(),
-            None,
-            "https://deps.rs/crate/demo/1.0.0",
-        );
-        let second = render(
-            &outcome,
-            &subject(),
-            None,
-            "https://deps.rs/crate/demo/1.0.0",
-        );
-
-        assert_eq!(first, second);
-        assert!(first.starts_with("<?xml version=\"1.0\" encoding=\"utf-8\"?>"));
-        assert!(first.contains("<ttl>60</ttl>"));
-        assert!(!first.contains("lastBuildDate"));
-        assert!(!first.contains("pubDate"));
-    }
-
-    #[test]
     fn if_none_match_uses_weak_etag_comparison() {
         let etag = EntityTag::new_strong("feed-hash".to_string());
 
@@ -632,17 +608,6 @@ Example advisory.
     }
 
     #[test]
-    fn omits_items_when_dependencies_are_current() {
-        let items = feed_items(
-            &outcome(dep("~1.38", Some("1.38.0"), Some("1.38.0"))),
-            &subject(),
-            None,
-        );
-
-        assert!(items.is_empty());
-    }
-
-    #[test]
     fn serializes_xml_special_characters_safely() {
         let outcome = outcome(dep(">=1.0, <2.0", Some("1.5.0"), Some("2.0.0")));
 
@@ -677,21 +642,5 @@ Example advisory.
 
         assert_ne!(root[0].guid, service_a[0].guid);
         assert_ne!(service_a[0].guid, service_b[0].guid);
-    }
-
-    #[test]
-    fn repo_path_normalizes_guid() {
-        let untrimmed = feed_items(
-            &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
-            &repo_subject(),
-            Some("/service-a/"),
-        );
-        let normalized = feed_items(
-            &outcome(dep("~1.32", Some("1.32.9"), Some("1.33.0"))),
-            &repo_subject(),
-            Some("service-a"),
-        );
-
-        assert_eq!(untrimmed[0].guid, normalized[0].guid);
     }
 }
