@@ -7,6 +7,7 @@ use maud::Markup;
 
 use crate::server::views::html::error::{render, render_404};
 
+/// HTTP 层统一错误类型，用于把内部失败映射成用户可读的状态页。
 #[derive(Debug, Display)]
 pub(crate) enum ServerError {
     #[display("Could not retrieve popular items")]
@@ -24,6 +25,10 @@ pub(crate) enum ServerError {
     #[display("Could not parse repository path")]
     BadRepoPath,
 
+    /// repo 路径合法但依赖分析失败，用于避免把分析失败误报成路径错误。
+    #[display("Could not analyze repository")]
+    RepoAnalysisFailed,
+
     #[display("Crate/repo analysis failed")]
     AnalysisFailed(Markup),
 }
@@ -36,6 +41,7 @@ impl ResponseError for ServerError {
             ServerError::BadCratePath => StatusCode::BAD_REQUEST,
             ServerError::CrateFetchFailed => StatusCode::NOT_FOUND,
             ServerError::BadRepoPath => StatusCode::BAD_REQUEST,
+            ServerError::RepoAnalysisFailed => StatusCode::BAD_REQUEST,
             ServerError::AnalysisFailed(_) => StatusCode::BAD_REQUEST,
         }
     }
@@ -69,6 +75,14 @@ impl ResponseError for ServerError {
                 render(
                     self.to_string(),
                     "Please make sure to provide a valid repository path.",
+                )
+                .0,
+            ),
+
+            ServerError::RepoAnalysisFailed => res.body(
+                render(
+                    self.to_string(),
+                    "The repository you requested might be structured in an uncommon way that is not yet supported.",
                 )
                 .0,
             ),

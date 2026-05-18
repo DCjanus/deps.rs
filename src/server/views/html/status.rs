@@ -6,7 +6,7 @@ use pulldown_cmark::{Parser, html};
 use rustsec::advisory::Advisory;
 use semver::Version;
 
-use super::render_html;
+use super::{render_html, render_html_with_feed};
 use crate::{
     engine::AnalyzeDependenciesOutcome,
     models::{
@@ -15,7 +15,8 @@ use crate::{
         repo::RepoSite,
     },
     server::{
-        BadgeTabMode, ExtraConfig, assets::STATIC_LINKS_JS_PATH, error::ServerError, views::badge,
+        BadgeTabMode, ExtraConfig, assets::STATIC_LINKS_JS_PATH, error::ServerError,
+        subject_feed_url, views::badge,
     },
 };
 
@@ -428,6 +429,7 @@ fn render_badge_panel(target: &str, markdown: &str, hidden: bool) -> Markup {
     }
 }
 
+/// 渲染依赖分析成功后的状态页主体，并在徽章旁展示 RSS 入口图标。
 fn render_success(
     analysis_outcome: AnalyzeDependenciesOutcome,
     subject_path: SubjectPath,
@@ -487,6 +489,12 @@ fn render_success(
     };
     let latest_panel_hidden = active_badge_tab != "latest";
     let pinned_panel_hidden = active_badge_tab != "pinned";
+    let feed_url = subject_feed_url(
+        &subject_path,
+        extra_config.path.as_deref(),
+        badge_tab_mode == BadgeTabMode::LatestDefault,
+    );
+    let rss_icon = PreEscaped(fa(FaType::Solid, "rss").unwrap());
 
     html! {
         section class=(format!("hero {hero_class}")) {
@@ -503,19 +511,28 @@ fn render_success(
                         }
                     }
 
-                    img src=(status_data_uri);
+                    div class="status-badge-row" {
+                        img class="status-badge" src=(status_data_uri);
+                        a class="rss-feed-link" href=(feed_url.as_str()) title="RSS feed" aria-label="RSS feed" {
+                            { (rss_icon) }
+                        }
+                    }
                 }
             }
             div class="hero-footer" {
                 div class="container" {
-                    div class="badge-group" data-badge-root="" {
+                    div class=(if show_badge_tabs { "badge-group has-badge-tabs" } else { "badge-group" }) data-badge-root="" {
                         @if show_badge_tabs {
-                            div class="tabs is-small" data-badge-tabs="" role="tablist" aria-label="Badge style variants" {
-                                ul {
-                                    (render_badge_tab("latest", "Latest release", active_badge_tab == "latest"))
-                                    (render_badge_tab("pinned", "Pinned version", active_badge_tab == "pinned"))
+                            div class="badge-toolbar" {
+                                div class="tabs is-small" data-badge-tabs="" role="tablist" aria-label="Badge style variants" {
+                                    ul {
+                                        (render_badge_tab("latest", "Latest release", active_badge_tab == "latest"))
+                                        (render_badge_tab("pinned", "Pinned version", active_badge_tab == "pinned"))
+                                    }
                                 }
                             }
+                        }
+                        @if show_badge_tabs {
                             (render_badge_panel(
                                 "latest",
                                 &latest_badge_markdown,
@@ -566,6 +583,7 @@ fn render_success(
     }
 }
 
+/// 渲染状态页响应；只有分析成功的详情页会暴露 RSS discovery 信息。
 pub fn response(
     analysis_outcome: Option<AnalyzeDependenciesOutcome>,
     subject_path: SubjectPath,
@@ -582,9 +600,16 @@ pub fn response(
     };
 
     if let Some(outcome) = analysis_outcome {
-        Ok(Html::new(render_html(
+        let feed_url = subject_feed_url(
+            &subject_path,
+            extra_config.path.as_deref(),
+            badge_tab_mode == BadgeTabMode::LatestDefault,
+        );
+
+        Ok(Html::new(render_html_with_feed(
             &title,
             render_success(outcome, subject_path, extra_config, badge_tab_mode),
+            Some(feed_url.as_str()),
         )))
     } else {
         let html = render_html(&title, render_failure(subject_path));
