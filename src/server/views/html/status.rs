@@ -5,6 +5,7 @@ use maud::{Markup, PreEscaped, html};
 use pulldown_cmark::{Parser, html};
 use rustsec::advisory::Advisory;
 use semver::Version;
+use url::Url;
 
 use super::{render_html, render_html_with_feed};
 use crate::{
@@ -16,16 +17,33 @@ use crate::{
     },
     server::{
         BadgeTabMode, ExtraConfig, assets::STATIC_LINKS_JS_PATH, error::ServerError,
-        subject_feed_url, views::badge,
+        subject_feed_url, subject_status_url, views::badge,
     },
 };
 
+/// 生成 crates.io crate 首页 URL。
+///
+/// 例如 `tokio` 会生成 `https://crates.io/crates/tokio`。
 fn get_crates_url(name: impl AsRef<str>) -> String {
-    format!("https://crates.io/crates/{}", name.as_ref())
+    let mut url = Url::parse("https://crates.io").expect("crates.io base URL must be valid");
+    url.path_segments_mut()
+        .expect("crates.io URL must support path segments")
+        .extend(["crates", name.as_ref()]);
+
+    url.into()
 }
 
+/// 生成 crates.io crate 版本页 URL。
+///
+/// 例如 `tokio` 和 `1.0.0` 会生成 `https://crates.io/crates/tokio/1.0.0`。
 fn get_crates_version_url(name: impl AsRef<str>, version: &Version) -> String {
-    format!("https://crates.io/crates/{}/{}", name.as_ref(), version)
+    let mut url = Url::parse("https://crates.io").expect("crates.io base URL must be valid");
+    let version = version.to_string();
+    url.path_segments_mut()
+        .expect("crates.io URL must support path segments")
+        .extend(["crates", name.as_ref(), version.as_str()]);
+
+    url.into()
 }
 
 fn dependency_tables(crate_name: &CrateName, deps: &AnalyzedDependencies) -> Markup {
@@ -354,15 +372,25 @@ fn render_failure(subject_path: SubjectPath) -> Markup {
     }
 }
 
+/// 生成 README badge Markdown 中的图片 URL 和跳转 URL。
+///
+/// 例如状态页 `https://deps.rs/repo/github/deps-rs/deps.rs` 会生成指向
+/// `https://deps.rs/repo/github/deps-rs/deps.rs/status.svg` 的 badge Markdown。
 fn render_badge_markdown(
-    status_base_url: &str,
-    link_base_url: Option<&str>,
+    status_base_url: &Url,
+    link_base_url: Option<&Url>,
     options: &BadgeMarkdownOptions<'_>,
 ) -> String {
     let link_base_url = link_base_url.unwrap_or(status_base_url);
-    let query = options.query_string();
-    let status_svg_url = with_query_url(&format!("{status_base_url}/status.svg"), query.as_deref());
-    let link_url = with_query_url(link_base_url, query.as_deref());
+    let mut status_svg_url = status_base_url.clone();
+    status_svg_url
+        .path_segments_mut()
+        .expect("status URL must support path segments")
+        .push("status.svg");
+    options.apply_to_url(&mut status_svg_url);
+
+    let mut link_url = link_base_url.clone();
+    options.apply_to_url(&mut link_url);
 
     format!("[![dependency status]({status_svg_url})]({link_url})")
 }
@@ -372,18 +400,13 @@ struct BadgeMarkdownOptions<'a> {
 }
 
 impl<'a> BadgeMarkdownOptions<'a> {
-    fn query_string(&self) -> Option<String> {
-        self.path
-            .map(|path| serde_urlencoded::to_string([("path", path)]).unwrap())
-    }
-}
-
-fn with_query_url(base_url: &str, query: Option<&str>) -> String {
-    // TODO: Consider accepting a strongly typed `url::Url` here to avoid ad-hoc
-    // string concatenation and provide stronger URL safety guarantees.
-    match query {
-        Some(query) => format!("{base_url}?{query}"),
-        None => base_url.to_string(),
+    /// 把 badge 选项追加到 URL query 上。
+    ///
+    /// 例如 `path=service-a` 会生成 `?path=service-a`。
+    fn apply_to_url(&self, url: &mut Url) {
+        if let Some(path) = self.path {
+            url.query_pairs_mut().append_pair("path", path);
+        }
     }
 }
 
@@ -436,18 +459,7 @@ fn render_success(
     extra_config: ExtraConfig,
     badge_tab_mode: BadgeTabMode,
 ) -> Markup {
-    let self_path = match subject_path {
-        SubjectPath::Repo(ref repo_path) => format!(
-            "repo/{}/{}/{}",
-            repo_path.site,
-            repo_path.qual.as_ref(),
-            repo_path.name.as_ref()
-        ),
-        SubjectPath::Crate(ref crate_path) => {
-            format!("crate/{}/{}", crate_path.name.as_ref(), crate_path.version)
-        }
-    };
-    let status_base_url = format!("{}/{}", &super::SELF_BASE_URL as &str, self_path);
+    let status_base_url = subject_status_url(&subject_path, None, false);
 
     let status_data_uri =
         badge::badge(Some(&analysis_outcome), extra_config.clone()).to_svg_data_uri();
@@ -465,12 +477,8 @@ fn render_success(
     };
     let pinned_badge_markdown = render_badge_markdown(&status_base_url, None, &markdown_options);
     let latest_badge_markdown = match &subject_path {
-        SubjectPath::Crate(crate_path) => {
-            let latest_status_base_url = format!(
-                "{}/crate/{}/latest",
-                &super::SELF_BASE_URL as &str,
-                crate_path.name.as_ref()
-            );
+        SubjectPath::Crate(_) => {
+            let latest_status_base_url = subject_status_url(&subject_path, None, true);
 
             render_badge_markdown(
                 &latest_status_base_url,
@@ -513,7 +521,7 @@ fn render_success(
 
                     div class="status-badge-row" {
                         img class="status-badge" src=(status_data_uri);
-                        a class="rss-feed-link" href=(feed_url) title="RSS feed" aria-label="RSS feed" {
+                        a class="rss-feed-link" href=(feed_url.as_str()) title="RSS feed" aria-label="RSS feed" {
                             { (rss_icon) }
                         }
                     }
@@ -609,7 +617,7 @@ pub fn response(
         Ok(Html::new(render_html_with_feed(
             &title,
             render_success(outcome, subject_path, extra_config, badge_tab_mode),
-            Some(&feed_url),
+            Some(feed_url.as_str()),
         )))
     } else {
         let html = render_html(&title, render_failure(subject_path));

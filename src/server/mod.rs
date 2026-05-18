@@ -17,6 +17,7 @@ use badge::BadgeStyle;
 use futures_util::future;
 use semver::VersionReq;
 use serde::Deserialize;
+use url::Url;
 
 mod assets;
 mod error;
@@ -125,7 +126,7 @@ pub(crate) async fn repo_status_feed(
         &analysis_outcome,
         &subject_path,
         extra_knobs.path.as_deref(),
-        &status_url,
+        status_url.as_str(),
     ))
 }
 
@@ -355,7 +356,7 @@ async fn crate_status_feed_impl(
         &analysis_outcome,
         &subject_path,
         None,
-        &status_url,
+        status_url.as_str(),
     ))
 }
 
@@ -482,61 +483,85 @@ fn status_format_analysis(
 }
 
 /// 生成 feed item 指回的人类可读状态页 URL。
+///
+/// 例如 repo feed 的 item 会指向 `https://deps.rs/repo/github/deps-rs/deps.rs?path=service-a`。
 pub(crate) fn subject_status_url(
     subject_path: &SubjectPath,
     path: Option<&str>,
     use_latest_crate_route: bool,
-) -> String {
-    let query = path.map(|path| serde_urlencoded::to_string([("path", path)]).unwrap());
-    let base_url = subject_base_url(subject_path, use_latest_crate_route);
+) -> Url {
+    let mut url = subject_base_url(subject_path, use_latest_crate_route);
+    append_path_query(&mut url, path);
 
-    with_query_url(&base_url, query.as_deref())
+    url
 }
 
 /// 生成状态页和 `<link rel="alternate">` 使用的 RSS feed URL。
+///
+/// 例如 repo 详情页会暴露 `https://deps.rs/repo/github/deps-rs/deps.rs/feed.xml?path=service-a`。
 pub(crate) fn subject_feed_url(
     subject_path: &SubjectPath,
     path: Option<&str>,
     use_latest_crate_route: bool,
-) -> String {
-    let query = path.map(|path| serde_urlencoded::to_string([("path", path)]).unwrap());
-    let base_url = format!(
-        "{}/feed.xml",
-        subject_base_url(subject_path, use_latest_crate_route),
-    );
+) -> Url {
+    let mut url = subject_base_url(subject_path, use_latest_crate_route);
+    push_path_segments(&mut url, ["feed.xml"]);
+    append_path_query(&mut url, path);
 
-    with_query_url(&base_url, query.as_deref())
+    url
 }
 
 /// 生成 crate/repo subject 的基础状态页 URL，不包含 feed 后缀和 query。
-fn subject_base_url(subject_path: &SubjectPath, use_latest_crate_route: bool) -> String {
+///
+/// 例如 `github/deps-rs/deps.rs` 会生成 `https://deps.rs/repo/github/deps-rs/deps.rs`。
+fn subject_base_url(subject_path: &SubjectPath, use_latest_crate_route: bool) -> Url {
+    let mut url = self_base_url();
+
     match subject_path {
-        SubjectPath::Repo(repo_path) => format!(
-            "{}/repo/{}/{}/{}",
-            &SELF_BASE_URL as &str,
-            repo_path.site,
-            repo_path.qual.as_ref(),
-            repo_path.name.as_ref()
-        ),
-        SubjectPath::Crate(crate_path) if use_latest_crate_route => format!(
-            "{}/crate/{}/latest",
-            &SELF_BASE_URL as &str,
-            crate_path.name.as_ref()
-        ),
-        SubjectPath::Crate(crate_path) => format!(
-            "{}/crate/{}/{}",
-            &SELF_BASE_URL as &str,
-            crate_path.name.as_ref(),
-            crate_path.version
-        ),
-    }
+        SubjectPath::Repo(repo_path) => {
+            push_path_segments(&mut url, ["repo"]);
+
+            let site = repo_path.site.to_string();
+            push_path_segments(&mut url, site.split('/'));
+            push_path_segments(&mut url, [repo_path.qual.as_ref(), repo_path.name.as_ref()]);
+        }
+        SubjectPath::Crate(crate_path) if use_latest_crate_route => {
+            push_path_segments(&mut url, ["crate", crate_path.name.as_ref(), "latest"]);
+        }
+        SubjectPath::Crate(crate_path) => {
+            let version = crate_path.version.to_string();
+            push_path_segments(
+                &mut url,
+                ["crate", crate_path.name.as_ref(), version.as_str()],
+            );
+        }
+    };
+
+    url
 }
 
-/// 给基础 URL 按需追加已经编码好的 query string。
-pub(crate) fn with_query_url(base_url: &str, query: Option<&str>) -> String {
-    match query {
-        Some(query) => format!("{base_url}?{query}"),
-        None => base_url.to_string(),
+/// 解析服务自己的基础 URL。
+///
+/// 例如默认配置会生成 `http://localhost:8080`。
+fn self_base_url() -> Url {
+    Url::parse(SELF_BASE_URL.as_str()).expect("BASE_URL must be a valid absolute URL")
+}
+
+/// 给 URL 追加 path segments。
+///
+/// 例如在 `https://deps.rs/repo/github/deps-rs/deps.rs` 后追加 `feed.xml`。
+fn push_path_segments<'a>(url: &mut Url, segments: impl IntoIterator<Item = &'a str>) {
+    url.path_segments_mut()
+        .expect("base URL must support path segments")
+        .extend(segments);
+}
+
+/// 给 URL 按需追加 repo 子路径 query。
+///
+/// 例如 `path=service-a` 会生成 `?path=service-a`。
+fn append_path_query(url: &mut Url, path: Option<&str>) {
+    if let Some(path) = path {
+        url.query_pairs_mut().append_pair("path", path);
     }
 }
 
@@ -652,5 +677,47 @@ impl ExtraConfig {
         } else {
             "dependencies"
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{SubjectPath, crates::CratePath, repo::RepoPath};
+
+    #[test]
+    fn repo_feed_url_keeps_path_query() {
+        let subject_path =
+            SubjectPath::Repo(RepoPath::from_parts("github", "deps-rs", "deps.rs").unwrap());
+
+        let url = subject_feed_url(&subject_path, Some("service-a"), false);
+
+        assert_eq!(
+            url.as_str(),
+            "http://localhost:8080/repo/github/deps-rs/deps.rs/feed.xml?path=service-a"
+        );
+    }
+
+    #[test]
+    fn crate_latest_status_url_uses_latest_route() {
+        let subject_path = SubjectPath::Crate(CratePath::from_parts("tokio", "1.0.0").unwrap());
+
+        let url = subject_status_url(&subject_path, None, true);
+
+        assert_eq!(url.as_str(), "http://localhost:8080/crate/tokio/latest");
+    }
+
+    #[test]
+    fn gitea_repo_site_remains_multiple_path_segments() {
+        let subject_path = SubjectPath::Repo(
+            RepoPath::from_parts("gitea/example.com/git", "deps-rs", "deps.rs").unwrap(),
+        );
+
+        let url = subject_feed_url(&subject_path, None, false);
+
+        assert_eq!(
+            url.as_str(),
+            "http://localhost:8080/repo/gitea/example.com/git/deps-rs/deps.rs/feed.xml"
+        );
     }
 }
