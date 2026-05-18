@@ -8,10 +8,12 @@ pub mod status;
 
 use crate::server::{SELF_BASE_URL, assets::STATIC_STYLE_CSS_PATH};
 
+/// 渲染不带 RSS discovery 信息的普通 HTML 页面。
 fn render_html<B: Render>(title: impl Into<String>, body: B) -> Markup {
     render_html_with_feed(title, body, None)
 }
 
+/// 渲染 HTML 页面，并在提供 feed URL 时注入 `<link rel="alternate">`。
 fn render_html_with_feed<B: Render>(
     title: impl Into<String>,
     body: B,

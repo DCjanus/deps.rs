@@ -429,6 +429,7 @@ fn render_badge_panel(target: &str, markdown: &str, hidden: bool) -> Markup {
     }
 }
 
+/// 渲染依赖分析成功后的状态页主体，并在徽章旁展示 RSS 入口图标。
 fn render_success(
     analysis_outcome: AnalyzeDependenciesOutcome,
     subject_path: SubjectPath,
@@ -582,6 +583,7 @@ fn render_success(
     }
 }
 
+/// 渲染状态页响应；只有分析成功的详情页会暴露 RSS discovery 信息。
 pub fn response(
     analysis_outcome: Option<AnalyzeDependenciesOutcome>,
     subject_path: SubjectPath,

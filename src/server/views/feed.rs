@@ -18,14 +18,19 @@ use crate::{
 
 const FEED_TTL_MINUTES: &str = "60";
 
+/// RSS 条目中的依赖分组，用于区分普通依赖、开发依赖和构建依赖。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum DependencyKind {
+    /// `[dependencies]` 中声明的普通依赖。
     Main,
+    /// `[dev-dependencies]` 中声明的开发依赖。
     Dev,
+    /// `[build-dependencies]` 中声明的构建依赖。
     Build,
 }
 
 impl DependencyKind {
+    /// 返回写入 RSS category 和 GUID 的稳定字符串标识。
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             DependencyKind::Main => "main",
@@ -35,13 +40,17 @@ impl DependencyKind {
     }
 }
 
+/// RSS 条目描述的问题类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum FeedIssueKind {
+    /// 依赖版本已经落后于可用的新版本。
     Outdated,
+    /// 依赖版本命中 RustSec 安全公告。
     Insecure,
 }
 
 impl FeedIssueKind {
+    /// 返回写入 RSS category、标题和 GUID 的稳定字符串标识。
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             FeedIssueKind::Outdated => "outdated",
@@ -50,17 +59,26 @@ impl FeedIssueKind {
     }
 }
 
+/// 内部使用的 RSS 条目模型，先收集并排序，再转换成 `rss::Item`。
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct FeedItem {
+    /// 声明该依赖的 package 名称，workspace feed 用它区分不同成员。
     pub(crate) package_name: String,
+    /// 该依赖来自普通、开发还是构建依赖分组。
     pub(crate) dependency_kind: DependencyKind,
+    /// 被报告为过期或不安全的依赖名称。
     pub(crate) dependency_name: String,
+    /// 当前条目报告的问题类型。
     pub(crate) issue_kind: FeedIssueKind,
+    /// 展示给 RSS 订阅器的条目标题。
     pub(crate) title: String,
+    /// 展示给 RSS 订阅器的版本状态摘要。
     pub(crate) description: String,
+    /// RSS GUID，用于让客户端判断是否是同一条依赖声明事件。
     pub(crate) guid: String,
 }
 
+/// 根据依赖分析结果渲染 RSS HTTP 响应，并处理 `If-None-Match` 条件请求。
 pub(crate) fn response(
     request: &HttpRequest,
     analysis_outcome: &AnalyzeDependenciesOutcome,
@@ -89,6 +107,7 @@ pub(crate) fn response(
         .body(body)
 }
 
+/// 将依赖分析结果渲染成完整的 RSS 2.0 XML 字符串。
 pub(crate) fn render(
     analysis_outcome: &AnalyzeDependenciesOutcome,
     subject_path: &SubjectPath,
@@ -103,6 +122,7 @@ pub(crate) fn render(
     channel(subject_path, repo_path, html_url, items).to_string()
 }
 
+/// 构造 RSS channel 元数据和条目列表。
 fn channel(
     subject_path: &SubjectPath,
     repo_path: Option<&str>,
@@ -118,6 +138,7 @@ fn channel(
         .build()
 }
 
+/// 判断 `If-None-Match` 里的任一 ETag 是否与当前 feed ETag 弱匹配。
 fn etag_matches(if_none_match: &str, etag: &EntityTag) -> bool {
     if_none_match.split(',').map(str::trim).any(|candidate| {
         candidate == "*"
@@ -127,6 +148,7 @@ fn etag_matches(if_none_match: &str, etag: &EntityTag) -> bool {
     })
 }
 
+/// 生成 RSS channel 标题；repo feed 会把子路径纳入标题，方便区分多个子项目。
 pub(crate) fn channel_title(subject_path: &SubjectPath, path: Option<&str>) -> String {
     match subject_path {
         SubjectPath::Repo(repo_path) => {
@@ -154,6 +176,7 @@ pub(crate) fn channel_title(subject_path: &SubjectPath, path: Option<&str>) -> S
     }
 }
 
+/// 把内部 `FeedItem` 转换为 rss crate 使用的 `Item`。
 fn rss_item(item: FeedItem, html_url: &str) -> Item {
     ItemBuilder::default()
         .title(item.title)
@@ -170,10 +193,12 @@ fn rss_item(item: FeedItem, html_url: &str) -> Item {
         .build()
 }
 
+/// 构造 RSS category。
 fn category(name: &str) -> rss::Category {
     CategoryBuilder::default().name(name).build()
 }
 
+/// 从完整依赖分析结果中收集所有需要出现在 feed 中的问题条目。
 pub(crate) fn feed_items(
     analysis_outcome: &AnalyzeDependenciesOutcome,
     subject_path: &SubjectPath,
@@ -190,6 +215,7 @@ pub(crate) fn feed_items(
     items
 }
 
+/// 收集某个 package 的普通、开发和构建依赖问题条目。
 fn collect_dependency_items(
     items: &mut Vec<FeedItem>,
     subject_id: &str,
@@ -230,6 +256,7 @@ fn collect_dependency_items(
     }
 }
 
+/// 根据单个依赖的分析结果，按需生成过期和不安全条目。
 fn collect_dependency_item(
     items: &mut Vec<FeedItem>,
     subject_id: &str,
@@ -261,6 +288,7 @@ fn collect_dependency_item(
     }
 }
 
+/// 构造单条 feed item，并为该依赖声明生成稳定 GUID。
 fn build_item(
     subject_id: &str,
     package_name: &CrateName,
@@ -295,6 +323,7 @@ fn build_item(
     }
 }
 
+/// 根据问题类型和漏洞影响范围，生成条目标题里的问题标签。
 fn issue_label(issue_kind: FeedIssueKind, dep: &AnalyzedDependency) -> &'static str {
     match issue_kind {
         FeedIssueKind::Outdated => issue_kind.as_str(),
@@ -303,6 +332,7 @@ fn issue_label(issue_kind: FeedIssueKind, dep: &AnalyzedDependency) -> &'static 
     }
 }
 
+/// 生成单条 RSS item 的版本状态描述。
 fn item_description(dep: &AnalyzedDependency) -> String {
     let latest_that_matches = dep
         .latest_that_matches
@@ -319,6 +349,7 @@ fn item_description(dep: &AnalyzedDependency) -> String {
     )
 }
 
+/// 为同一 subject、package、依赖分组、问题类型和版本要求生成稳定 GUID。
 fn item_guid(
     subject_id: &str,
     package_name: &str,
@@ -345,6 +376,7 @@ fn item_guid(
     )
 }
 
+/// 归一化 repo 子路径，避免前后斜杠影响标题和 GUID。
 fn normalized_repo_path(path: Option<&str>) -> Option<String> {
     path.map(str::trim)
         .map(|path| path.trim_matches('/'))
@@ -352,6 +384,7 @@ fn normalized_repo_path(path: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+/// 生成 feed subject 标识；repo feed 会纳入子路径以区分不同子项目。
 fn subject_id(subject_path: &SubjectPath, path: Option<&str>) -> String {
     match subject_path {
         SubjectPath::Repo(repo_path) => {

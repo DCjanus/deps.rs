@@ -7,6 +7,7 @@ use maud::Markup;
 
 use crate::server::views::html::error::{render, render_404};
 
+/// HTTP 层统一错误类型，用于把内部失败映射成用户可读的状态页。
 #[derive(Debug, Display)]
 pub(crate) enum ServerError {
     #[display("Could not retrieve popular items")]
@@ -24,6 +25,7 @@ pub(crate) enum ServerError {
     #[display("Could not parse repository path")]
     BadRepoPath,
 
+    /// repo 路径合法但依赖分析失败，用于避免把分析失败误报成路径错误。
     #[display("Could not analyze repository")]
     RepoAnalysisFailed,
 

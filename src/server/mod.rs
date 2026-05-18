@@ -51,8 +51,11 @@ enum StatusFormat {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BadgeTabMode {
+    /// 不展示 latest/pinned badge 切换。
     Hidden,
+    /// 默认展示固定版本 badge。
     PinnedDefault,
+    /// 默认展示 latest 路由 badge。
     LatestDefault,
 }
 
@@ -89,6 +92,7 @@ pub(crate) async fn repo_status_shield_json(
     repo_status(engine, uri, params, StatusFormat::ShieldJson).await
 }
 
+/// 生成 repo 状态页对应的 RSS feed。
 #[get("/repo/{site:.+?}/{qual}/{name}/feed.xml")]
 pub(crate) async fn repo_status_feed(
     ThinData(engine): ThinData<Engine>,
@@ -256,6 +260,7 @@ async fn crate_latest_status_shield_json(
     crate_status(engine, uri, (name, None), StatusFormat::ShieldJson).await
 }
 
+/// 生成 crate latest 路由对应的 RSS feed。
 #[get("/crate/{name}/latest/feed.xml")]
 pub(crate) async fn crate_latest_status_feed(
     ThinData(engine): ThinData<Engine>,
@@ -284,6 +289,7 @@ async fn crate_status_shield_json(
     crate_status(engine, uri, (name, Some(version)), StatusFormat::ShieldJson).await
 }
 
+/// 生成 crate 固定版本状态页对应的 RSS feed。
 #[get("/crate/{name}/{version}/feed.xml")]
 pub(crate) async fn crate_status_feed(
     ThinData(engine): ThinData<Engine>,
@@ -294,6 +300,7 @@ pub(crate) async fn crate_status_feed(
     crate_status_feed_impl(engine, request, uri, (name, Some(version))).await
 }
 
+/// 解析 crate feed 请求，执行依赖分析，并渲染 RSS 响应。
 async fn crate_status_feed_impl(
     engine: Engine,
     request: HttpRequest,
@@ -474,6 +481,7 @@ fn status_format_analysis(
     }
 }
 
+/// 生成 feed item 指回的人类可读状态页 URL。
 pub(crate) fn subject_html_url(
     subject_path: &SubjectPath,
     path: Option<&str>,
@@ -485,6 +493,7 @@ pub(crate) fn subject_html_url(
     with_query_url(&base_url, query.as_deref())
 }
 
+/// 生成状态页和 `<link rel="alternate">` 使用的 RSS feed URL。
 pub(crate) fn subject_feed_url(
     subject_path: &SubjectPath,
     path: Option<&str>,
@@ -499,6 +508,7 @@ pub(crate) fn subject_feed_url(
     with_query_url(&base_url, query.as_deref())
 }
 
+/// 生成 crate/repo subject 的基础状态页 URL，不包含 feed 后缀和 query。
 fn subject_base_url(subject_path: &SubjectPath, use_latest_crate_route: bool) -> String {
     match subject_path {
         SubjectPath::Repo(repo_path) => format!(
@@ -522,6 +532,7 @@ fn subject_base_url(subject_path: &SubjectPath, use_latest_crate_route: bool) ->
     }
 }
 
+/// 给基础 URL 按需追加已经编码好的 query string。
 pub(crate) fn with_query_url(base_url: &str, query: Option<&str>) -> String {
     match query {
         Some(query) => format!("{base_url}?{query}"),
