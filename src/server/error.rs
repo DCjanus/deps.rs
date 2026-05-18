@@ -24,6 +24,9 @@ pub(crate) enum ServerError {
     #[display("Could not parse repository path")]
     BadRepoPath,
 
+    #[display("Could not analyze repository")]
+    RepoAnalysisFailed,
+
     #[display("Crate/repo analysis failed")]
     AnalysisFailed(Markup),
 }
@@ -36,6 +39,7 @@ impl ResponseError for ServerError {
             ServerError::BadCratePath => StatusCode::BAD_REQUEST,
             ServerError::CrateFetchFailed => StatusCode::NOT_FOUND,
             ServerError::BadRepoPath => StatusCode::BAD_REQUEST,
+            ServerError::RepoAnalysisFailed => StatusCode::BAD_REQUEST,
             ServerError::AnalysisFailed(_) => StatusCode::BAD_REQUEST,
         }
     }
@@ -73,7 +77,34 @@ impl ResponseError for ServerError {
                 .0,
             ),
 
+            ServerError::RepoAnalysisFailed => res.body(
+                render(
+                    self.to_string(),
+                    "The repository you requested might be structured in an uncommon way that is not yet supported.",
+                )
+                .0,
+            ),
+
             Self::AnalysisFailed(html) => res.body(html.0.clone()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use actix_web::{ResponseError, http::StatusCode};
+
+    use super::ServerError;
+
+    #[test]
+    fn repo_analysis_failure_is_not_reported_as_bad_path() {
+        assert_eq!(
+            ServerError::RepoAnalysisFailed.status_code(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            ServerError::RepoAnalysisFailed.to_string(),
+            "Could not analyze repository"
+        );
     }
 }

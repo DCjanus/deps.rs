@@ -111,7 +111,7 @@ pub(crate) async fn repo_status_feed(
         .inspect_err(|err| {
             tracing::error!(%err);
         })
-        .map_err(|_| ServerError::BadRepoPath)?;
+        .map_err(|_| ServerError::RepoAnalysisFailed)?;
 
     let subject_path = SubjectPath::Repo(repo_path);
     let html_url = subject_html_url(&subject_path, extra_knobs.path.as_deref(), false);
