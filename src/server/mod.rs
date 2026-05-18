@@ -118,14 +118,14 @@ pub(crate) async fn repo_status_feed(
         .map_err(|_| ServerError::RepoAnalysisFailed)?;
 
     let subject_path = SubjectPath::Repo(repo_path);
-    let html_url = subject_html_url(&subject_path, extra_knobs.path.as_deref(), false);
+    let status_url = subject_status_url(&subject_path, extra_knobs.path.as_deref(), false);
 
     Ok(views::feed::response(
         &request,
         &analysis_outcome,
         &subject_path,
         extra_knobs.path.as_deref(),
-        &html_url,
+        &status_url,
     ))
 }
 
@@ -348,14 +348,14 @@ async fn crate_status_feed_impl(
         .map_err(|_| ServerError::CrateFetchFailed)?;
 
     let subject_path = SubjectPath::Crate(crate_path);
-    let html_url = subject_html_url(&subject_path, None, is_latest_crate_route);
+    let status_url = subject_status_url(&subject_path, None, is_latest_crate_route);
 
     Ok(views::feed::response(
         &request,
         &analysis_outcome,
         &subject_path,
         None,
-        &html_url,
+        &status_url,
     ))
 }
 
@@ -482,7 +482,7 @@ fn status_format_analysis(
 }
 
 /// 生成 feed item 指回的人类可读状态页 URL。
-pub(crate) fn subject_html_url(
+pub(crate) fn subject_status_url(
     subject_path: &SubjectPath,
     path: Option<&str>,
     use_latest_crate_route: bool,

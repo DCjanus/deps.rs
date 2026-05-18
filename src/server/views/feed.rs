@@ -84,9 +84,9 @@ pub(crate) fn response(
     analysis_outcome: &AnalyzeDependenciesOutcome,
     subject_path: &SubjectPath,
     repo_path: Option<&str>,
-    html_url: &str,
+    status_url: &str,
 ) -> HttpResponse {
-    let body = render(analysis_outcome, subject_path, repo_path, html_url);
+    let body = render(analysis_outcome, subject_path, repo_path, status_url);
     let etag_value = format!("{:x}", Sha1::digest(body.as_bytes()));
     let etag = EntityTag::new_strong(etag_value);
 
@@ -112,26 +112,26 @@ pub(crate) fn render(
     analysis_outcome: &AnalyzeDependenciesOutcome,
     subject_path: &SubjectPath,
     repo_path: Option<&str>,
-    html_url: &str,
+    status_url: &str,
 ) -> String {
     let items = feed_items(analysis_outcome, subject_path, repo_path)
         .into_iter()
-        .map(|item| rss_item(item, html_url))
+        .map(|item| rss_item(item, status_url))
         .collect::<Vec<_>>();
 
-    channel(subject_path, repo_path, html_url, items).to_string()
+    channel(subject_path, repo_path, status_url, items).to_string()
 }
 
 /// 构造 RSS channel 元数据和条目列表。
 fn channel(
     subject_path: &SubjectPath,
     repo_path: Option<&str>,
-    html_url: &str,
+    status_url: &str,
     items: Vec<Item>,
 ) -> rss::Channel {
     ChannelBuilder::default()
         .title(channel_title(subject_path, repo_path))
-        .link(html_url)
+        .link(status_url)
         .description("Outdated and insecure dependency status reported by deps.rs.")
         .ttl(Some(FEED_TTL_MINUTES.to_string()))
         .items(items)
@@ -177,10 +177,10 @@ pub(crate) fn channel_title(subject_path: &SubjectPath, path: Option<&str>) -> S
 }
 
 /// 把内部 `FeedItem` 转换为 rss crate 使用的 `Item`。
-fn rss_item(item: FeedItem, html_url: &str) -> Item {
+fn rss_item(item: FeedItem, status_url: &str) -> Item {
     ItemBuilder::default()
         .title(item.title)
-        .link(Some(html_url.to_string()))
+        .link(Some(status_url.to_string()))
         .description(item.description)
         .guid(
             GuidBuilder::default()
