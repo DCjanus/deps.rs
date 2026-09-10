@@ -44,7 +44,9 @@ Dependency status pages expose an RSS 2.0 feed through the RSS icon and HTML fee
 - latest crate release: `https://deps.rs/crate/<NAME>/latest/feed.xml`
 - pinned crate release: `https://deps.rs/crate/<NAME>/<VERSION>/feed.xml`
 
-Each item represents a currently outdated or insecure dependency declaration. Feeds are snapshots, not event logs: resolved issues disappear, recovery notifications are not emitted, and changes that appear and disappear between polls can be missed. A new version alone does not create another item for a dependency that is already outdated. Changes to the version requirement, a new RustSec advisory, or a change between possibly insecure and insecure produce a new item identity.
+Each item represents a currently outdated or insecure dependency entry produced by the existing deps.rs analysis model. This is not necessarily a one-to-one representation of source declarations: aliases or target-specific declarations that resolve to the same package and dependency kind may be coalesced by the current manifest analysis.
+
+Feeds are snapshots, not event logs: resolved issues disappear, recovery notifications are not emitted, and changes that appear and disappear between polls can be missed. A new version alone does not create another item for a dependency that is already outdated. Changes to the version requirement, a new RustSec advisory, or a change between possibly insecure and insecure produce a new item identity.
 
 Item GUIDs use a versioned identity contract. Changing the meaning of the current `v1` identity is a compatibility change because subscribers may treat it as a new notification.
 
