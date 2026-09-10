@@ -208,14 +208,17 @@ async fn crate_redirect(
         return Err(ServerError::CrateFetchFailed.into());
     };
 
-    let redirect_url = format!(
-        "{}/crate/{}/{}",
-        &SELF_BASE_URL as &str,
-        release.name.as_ref(),
-        release.version
-    );
+    let redirect_url = crate_default_redirect_url(&release);
 
     Ok(Redirect::to(redirect_url))
+}
+
+fn crate_default_redirect_url(release: &crate::models::crates::CrateRelease) -> String {
+    format!(
+        "{}/crate/{}/latest",
+        &SELF_BASE_URL as &str,
+        release.name.as_ref()
+    )
 }
 
 #[get("/crate/{name}/{version}")]
@@ -627,6 +630,21 @@ mod tests {
             )))
             .status_code(),
             StatusCode::BAD_GATEWAY
+        );
+    }
+
+    #[test]
+    fn versionless_crate_urls_preserve_latest_intent() {
+        let release = crate::models::crates::CrateRelease {
+            name: "demo".parse().unwrap(),
+            version: "1.2.3".parse().unwrap(),
+            deps: Default::default(),
+            yanked: false,
+        };
+
+        assert_eq!(
+            crate_default_redirect_url(&release),
+            "http://localhost:8080/crate/demo/latest"
         );
     }
 }
