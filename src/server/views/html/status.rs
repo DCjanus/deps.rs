@@ -6,7 +6,7 @@ use pulldown_cmark::{Parser, html};
 use rustsec::advisory::Advisory;
 use semver::Version;
 
-use super::render_html;
+use super::{render_html, render_html_with_feed};
 use crate::{
     engine::AnalyzeDependenciesOutcome,
     models::{
@@ -15,7 +15,8 @@ use crate::{
         repo::RepoSite,
     },
     server::{
-        BadgeTabMode, ExtraConfig, assets::STATIC_LINKS_JS_PATH, error::ServerError, views::badge,
+        BadgeTabMode, ExtraConfig, advisory_anchor, assets::STATIC_LINKS_JS_PATH,
+        dependency_anchor, error::ServerError, status_feed_url, views::badge,
     },
 };
 
@@ -39,20 +40,25 @@ fn dependency_tables(crate_name: &CrateName, deps: &AnalyzedDependencies) -> Mar
         }
 
         @if !deps.main.is_empty() {
-            (dependency_table("Dependencies", &deps.main))
+            (dependency_table(crate_name, "main", "Dependencies", &deps.main))
         }
 
         @if !deps.dev.is_empty() {
-            (dependency_table("Dev dependencies", &deps.dev))
+            (dependency_table(crate_name, "dev", "Dev dependencies", &deps.dev))
         }
 
         @if !deps.build.is_empty() {
-            (dependency_table("Build dependencies", &deps.build))
+            (dependency_table(crate_name, "build", "Build dependencies", &deps.build))
         }
     }
 }
 
-fn dependency_table(title: &str, deps: &IndexMap<CrateName, AnalyzedDependency>) -> Markup {
+fn dependency_table(
+    crate_name: &CrateName,
+    dependency_kind: &str,
+    title: &str,
+    deps: &IndexMap<CrateName, AnalyzedDependency>,
+) -> Markup {
     let count_total = deps.len();
     let count_always_insecure = deps
         .iter()
@@ -89,7 +95,7 @@ fn dependency_table(title: &str, deps: &IndexMap<CrateName, AnalyzedDependency>)
             }
             tbody {
                 @for (name, dep) in deps {
-                    tr {
+                    tr id=(dependency_anchor(crate_name.as_ref(), dependency_kind, name.as_ref())) {
                         td {
                             a class="has-text-grey" href=(get_crates_url(name)) {
                                 { (fa_cube) }
@@ -291,7 +297,7 @@ fn vulnerability_list(analysis_outcome: &AnalyzeDependenciesOutcome) -> Markup {
         h3 class="title is-3" id="vulnerabilities" { "Security Vulnerabilities" }
 
         @for vuln in vulnerabilities {
-            div class="box" {
+            div class="box" id=(advisory_anchor(vuln.id().as_str())) {
                 h3 class="title is-4" { code { (vuln.metadata.package.as_str()) } ": " (vuln.title()) }
                 p class="subtitle is-5" style="margin-top: -0.5rem;" { a href=(build_rustsec_link(vuln)) { (vuln.id().to_string()) } }
 
@@ -487,6 +493,12 @@ fn render_success(
     };
     let latest_panel_hidden = active_badge_tab != "latest";
     let pinned_panel_hidden = active_badge_tab != "pinned";
+    let feed_url = status_feed_url(
+        &subject_path,
+        extra_config.path.as_deref(),
+        badge_tab_mode == BadgeTabMode::LatestDefault,
+    );
+    let rss_icon = PreEscaped(fa(FaType::Solid, "rss").unwrap());
 
     html! {
         section class=(format!("hero {hero_class}")) {
@@ -503,7 +515,12 @@ fn render_success(
                         }
                     }
 
-                    img src=(status_data_uri);
+                    div class="status-badge-row" {
+                        img src=(status_data_uri);
+                        a class="rss-feed-link" href=(feed_url.as_str()) title="RSS feed" aria-label="RSS feed" {
+                            { (rss_icon) }
+                        }
+                    }
                 }
             }
             div class="hero-footer" {
@@ -582,9 +599,15 @@ pub fn response(
     };
 
     if let Some(outcome) = analysis_outcome {
-        Ok(Html::new(render_html(
+        let feed_url = status_feed_url(
+            &subject_path,
+            extra_config.path.as_deref(),
+            badge_tab_mode == BadgeTabMode::LatestDefault,
+        );
+        Ok(Html::new(render_html_with_feed(
             &title,
             render_success(outcome, subject_path, extra_config, badge_tab_mode),
+            Some(feed_url.as_str()),
         )))
     } else {
         let html = render_html(&title, render_failure(subject_path));

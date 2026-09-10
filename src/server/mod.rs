@@ -1,7 +1,7 @@
 use std::{env, sync::LazyLock};
 
 use actix_web::{
-    Either, HttpResponse, Resource, Responder, get,
+    Either, HttpRequest, HttpResponse, Resource, Responder, get,
     http::{
         StatusCode, Uri,
         header::{ContentType, ETag, EntityTag},
@@ -17,6 +17,7 @@ use badge::BadgeStyle;
 use futures_util::future;
 use semver::VersionReq;
 use serde::Deserialize;
+use url::Url;
 
 mod assets;
 mod error;
@@ -29,7 +30,7 @@ use self::{
     error::ServerError,
 };
 use crate::{
-    engine::{AnalyzeDependenciesOutcome, Engine},
+    engine::{AnalyzeCrateDependenciesError, AnalyzeDependenciesOutcome, Engine},
     models::{
         SubjectPath,
         crates::{CrateName, CratePath},
@@ -87,6 +88,30 @@ pub(crate) async fn repo_status_shield_json(
     Path(params): Path<(String, String, String)>,
 ) -> actix_web::Result<impl Responder> {
     repo_status(engine, uri, params, StatusFormat::ShieldJson).await
+}
+
+#[get("/repo/{site:.+?}/{qual}/{name}/feed.xml")]
+pub(crate) async fn repo_status_feed(
+    ThinData(engine): ThinData<Engine>,
+    request: HttpRequest,
+    uri: Uri,
+    Path((site, qual, name)): Path<(String, String, String)>,
+) -> actix_web::Result<impl Responder> {
+    let extra_config = ExtraConfig::from_query_string(uri.query());
+    let repo_path = RepoPath::from_parts(&site, &qual, &name).map_err(|err| {
+        tracing::error!(%err);
+        ServerError::BadRepoPath
+    })?;
+    let analysis = engine
+        .analyze_repo_dependencies(repo_path.clone(), &extra_config.path)
+        .await
+        .map_err(|err| {
+            tracing::error!(%err);
+            ServerError::AnalysisUnavailable
+        })?;
+    let subject = views::feed::FeedSubject::repo(repo_path, extra_config.path.as_deref());
+
+    Ok(views::feed::response(&request, &analysis, &subject))
 }
 
 #[get("/repo/{site:.+?}/{qual}/{name}")]
@@ -220,6 +245,15 @@ async fn crate_latest_status_shield_json(
     crate_status(engine, uri, (name, None), StatusFormat::ShieldJson).await
 }
 
+#[get("/crate/{name}/latest/feed.xml")]
+pub(crate) async fn crate_latest_status_feed(
+    ThinData(engine): ThinData<Engine>,
+    request: HttpRequest,
+    Path((name,)): Path<(String,)>,
+) -> actix_web::Result<impl Responder> {
+    crate_status_feed(engine, request, name, None).await
+}
+
 #[get("/crate/{name}/{version}/status.svg")]
 async fn crate_status_svg(
     ThinData(engine): ThinData<Engine>,
@@ -236,6 +270,65 @@ async fn crate_status_shield_json(
     Path((name, version)): Path<(String, String)>,
 ) -> actix_web::Result<impl Responder> {
     crate_status(engine, uri, (name, Some(version)), StatusFormat::ShieldJson).await
+}
+
+#[get("/crate/{name}/{version}/feed.xml")]
+pub(crate) async fn crate_pinned_status_feed(
+    ThinData(engine): ThinData<Engine>,
+    request: HttpRequest,
+    Path((name, version)): Path<(String, String)>,
+) -> actix_web::Result<impl Responder> {
+    crate_status_feed(engine, request, name, Some(version)).await
+}
+
+async fn crate_status_feed(
+    engine: Engine,
+    request: HttpRequest,
+    name: String,
+    version: Option<String>,
+) -> actix_web::Result<impl Responder> {
+    let latest_route = version.is_none();
+    let version = match version {
+        Some(version) => version,
+        None => {
+            let crate_name = name.parse().map_err(|err| {
+                tracing::error!(%err);
+                ServerError::BadCratePath
+            })?;
+            match engine
+                .find_latest_stable_crate_release(crate_name, VersionReq::STAR)
+                .await
+            {
+                Ok(Some(release)) => release.version.to_string(),
+                Ok(None) => return Err(ServerError::CrateNotFound.into()),
+                Err(err) => {
+                    tracing::error!(%err);
+                    return Err(ServerError::AnalysisUnavailable.into());
+                }
+            }
+        }
+    };
+    let crate_path = CratePath::from_parts(&name, &version).map_err(|err| {
+        tracing::error!(%err);
+        ServerError::BadCratePath
+    })?;
+    let analysis = match engine.analyze_crate_dependencies(crate_path.clone()).await {
+        Ok(analysis) => analysis,
+        Err(AnalyzeCrateDependenciesError::ReleaseNotFound) => {
+            return Err(ServerError::CrateNotFound.into());
+        }
+        Err(AnalyzeCrateDependenciesError::Analysis(err)) => {
+            tracing::error!(%err);
+            return Err(ServerError::AnalysisUnavailable.into());
+        }
+    };
+    let subject = if latest_route {
+        views::feed::FeedSubject::crate_latest(crate_path)
+    } else {
+        views::feed::FeedSubject::crate_pinned(crate_path)
+    };
+
+    Ok(views::feed::response(&request, &analysis, &subject))
 }
 
 async fn crate_status(
@@ -358,6 +451,31 @@ fn status_format_analysis(
             badge_knobs,
         )),
     }
+}
+
+pub(crate) fn dependency_anchor(package: &str, kind: &str, dependency: &str) -> String {
+    format!("dependency:{kind}:{package}:{dependency}")
+}
+
+pub(crate) fn advisory_anchor(advisory_id: &str) -> String {
+    format!("advisory:{advisory_id}")
+}
+
+pub(crate) fn status_feed_url(
+    subject_path: &SubjectPath,
+    path: Option<&str>,
+    latest_crate_route: bool,
+) -> Url {
+    let subject = match subject_path {
+        SubjectPath::Repo(repo) => views::feed::FeedSubject::repo(repo.clone(), path),
+        SubjectPath::Crate(crate_path) if latest_crate_route => {
+            views::feed::FeedSubject::crate_latest(crate_path.clone())
+        }
+        SubjectPath::Crate(crate_path) => {
+            views::feed::FeedSubject::crate_pinned(crate_path.clone())
+        }
+    };
+    subject.feed_url()
 }
 
 pub(crate) fn static_files(cfg: &mut ServiceConfig) {

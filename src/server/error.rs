@@ -24,6 +24,9 @@ pub(crate) enum ServerError {
     #[display("Could not parse repository path")]
     BadRepoPath,
 
+    #[display("Dependency analysis is temporarily unavailable")]
+    AnalysisUnavailable,
+
     #[display("Crate/repo analysis failed")]
     AnalysisFailed(Markup),
 }
@@ -36,6 +39,7 @@ impl ResponseError for ServerError {
             ServerError::BadCratePath => StatusCode::BAD_REQUEST,
             ServerError::CrateFetchFailed => StatusCode::NOT_FOUND,
             ServerError::BadRepoPath => StatusCode::BAD_REQUEST,
+            ServerError::AnalysisUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             ServerError::AnalysisFailed(_) => StatusCode::BAD_REQUEST,
         }
     }
@@ -72,6 +76,10 @@ impl ResponseError for ServerError {
                 )
                 .0,
             ),
+
+            ServerError::AnalysisUnavailable => {
+                res.body(render(self.to_string(), "Please try again later.").0)
+            }
 
             Self::AnalysisFailed(html) => res.body(html.0.clone()),
         }

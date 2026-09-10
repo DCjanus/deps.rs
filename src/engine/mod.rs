@@ -1,11 +1,12 @@
 use std::{
     collections::HashSet,
+    fmt,
     sync::{Arc, LazyLock},
     time::{Duration, Instant},
 };
 
 use actix_web::dev::Service;
-use anyhow::{Error, anyhow};
+use anyhow::Error;
 use futures_util::{
     StreamExt as _,
     future::try_join_all,
@@ -78,6 +79,30 @@ impl Engine {
 pub struct AnalyzeDependenciesOutcome {
     pub crates: Vec<(CrateName, AnalyzedDependencies)>,
     pub duration: Duration,
+}
+
+#[derive(Debug)]
+pub enum AnalyzeCrateDependenciesError {
+    ReleaseNotFound,
+    Analysis(Error),
+}
+
+impl fmt::Display for AnalyzeCrateDependenciesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ReleaseNotFound => f.write_str("crate release not found"),
+            Self::Analysis(err) => write!(f, "crate analysis failed: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for AnalyzeCrateDependenciesError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ReleaseNotFound => None,
+            Self::Analysis(err) => Some(err.as_ref()),
+        }
+    }
 }
 
 impl AnalyzeDependenciesOutcome {
@@ -195,13 +220,14 @@ impl Engine {
     pub async fn analyze_crate_dependencies(
         &self,
         crate_path: CratePath,
-    ) -> Result<AnalyzeDependenciesOutcome, Error> {
+    ) -> Result<AnalyzeDependenciesOutcome, AnalyzeCrateDependenciesError> {
         let start = Instant::now();
 
         let query_response = self
             .query_crate
             .cached_query(crate_path.name.clone())
-            .await?;
+            .await
+            .map_err(AnalyzeCrateDependenciesError::Analysis)?;
 
         let engine = self.clone();
 
@@ -210,14 +236,12 @@ impl Engine {
             .iter()
             .find(|release| release.version == crate_path.version)
         {
-            None => Err(anyhow!(
-                "could not find crate release with version {}",
-                crate_path.version
-            )),
+            None => Err(AnalyzeCrateDependenciesError::ReleaseNotFound),
 
             Some(release) => {
-                let analyzed_deps =
-                    analyze_dependencies(engine.clone(), release.deps.clone()).await?;
+                let analyzed_deps = analyze_dependencies(engine.clone(), release.deps.clone())
+                    .await
+                    .map_err(AnalyzeCrateDependenciesError::Analysis)?;
 
                 let crates = vec![(crate_path.name, analyzed_deps)];
                 let duration = start.elapsed();
