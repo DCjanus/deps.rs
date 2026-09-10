@@ -703,6 +703,21 @@ CDATA terminator: ]]> and XML characters: < & >.
     }
 
     #[test]
+    fn guid_v1_contract_has_a_golden_value() {
+        let mut dep = dependency(">=1, <2", "1.5.0", "2.0.0");
+        dep.vulnerabilities
+            .push(advisory("RUSTSEC-2026-0001", ">=2"));
+        let repo = RepoPath::from_parts("github", "example", "workspace").unwrap();
+        let subject = FeedSubject::repo(repo, Some("crates/demo"));
+
+        let security_item = &feed_items(&outcome(dep), &subject)[0];
+        assert_eq!(
+            security_item.guid,
+            "urn:deps.rs:dependency-issue:v1:6b19d070c3d052940141e3fbb2fbcd9cd8ae8e2b065b52ff236f4f9c738c21d0"
+        );
+    }
+
+    #[test]
     fn repo_feed_urls_canonicalize_paths_and_escape_atom_self_links() {
         let repo = RepoPath::from_parts("github", "deps-rs", "deps.rs").unwrap();
         let subject = FeedSubject::repo(repo, Some("/libs/../libs/badge & tools/"));
