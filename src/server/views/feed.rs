@@ -16,7 +16,7 @@ use url::Url;
 use crate::{
     engine::AnalyzeDependenciesOutcome,
     models::{
-        crates::{AnalyzedDependency, CrateName, CratePath},
+        crates::{AnalyzedDependency, CrateName, CratePath, VulnerabilityStatus},
         repo::RepoPath,
     },
     server::{SELF_BASE_URL, advisory_anchor, dependency_anchor},
@@ -410,11 +410,9 @@ fn collect_dependencies(
     for (dependency_name, dependency) in dependencies {
         if dependency.is_insecure() {
             for advisory in &dependency.vulnerabilities {
-                let issue_kind = match dependency.latest_that_matches.as_ref() {
-                    Some(version) if !advisory.versions.is_vulnerable(version) => {
-                        IssueKind::MaybeInsecure
-                    }
-                    Some(_) | None => IssueKind::Insecure,
+                let issue_kind = match dependency.vulnerability_status(advisory) {
+                    VulnerabilityStatus::PossiblyInsecure => IssueKind::MaybeInsecure,
+                    VulnerabilityStatus::Insecure => IssueKind::Insecure,
                 };
                 items.push(build_item(
                     subject,

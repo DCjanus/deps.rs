@@ -11,7 +11,7 @@ use crate::{
     engine::AnalyzeDependenciesOutcome,
     models::{
         SubjectPath,
-        crates::{AnalyzedDependencies, AnalyzedDependency, CrateName},
+        crates::{AnalyzedDependencies, AnalyzedDependency, CrateName, VulnerabilityStatus},
         repo::RepoSite,
     },
     server::{
@@ -62,7 +62,9 @@ fn dependency_table(
     let count_total = deps.len();
     let count_always_insecure = deps
         .iter()
-        .filter(|&(_, dep)| dep.is_always_insecure())
+        .filter(|&(_, dep)| {
+            dep.vulnerability_status_summary() == Some(VulnerabilityStatus::Insecure)
+        })
         .count();
     let count_insecure = deps.iter().filter(|&(_, dep)| dep.is_insecure()).count();
     let count_outdated = deps.iter().filter(|&(_, dep)| dep.is_outdated()).count();
@@ -117,7 +119,7 @@ fn dependency_table(
                             }
                         }
                         td class="has-text-right" {
-                            @if dep.is_always_insecure() {
+                            @if dep.vulnerability_status_summary() == Some(VulnerabilityStatus::Insecure) {
                                 span class="tag is-danger" { "insecure" }
                             } @else if dep.is_outdated() {
                                 span class="tag is-warning" { "out of date" }

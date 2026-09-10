@@ -93,6 +93,77 @@ pub struct AnalyzedDependency {
     pub vulnerabilities: Vec<Advisory>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VulnerabilityStatus {
+    PossiblyInsecure,
+    Insecure,
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+
+    fn advisory(id: &str, patched: &str) -> Advisory {
+        format!(
+            r#"```toml
+[advisory]
+id = "{id}"
+package = "demo"
+date = "2026-01-02"
+
+[versions]
+patched = ["{patched}"]
+```
+
+# Example
+"#
+        )
+        .parse()
+        .unwrap()
+    }
+
+    #[test]
+    fn required_range_remains_insecure_when_only_global_latest_is_patched() {
+        let dependency = AnalyzedDependency {
+            required: VersionReq::parse("^1").unwrap(),
+            latest_that_matches: Some(Version::parse("1.9.0").unwrap()),
+            latest: Some(Version::parse("2.0.0").unwrap()),
+            vulnerabilities: vec![advisory("RUSTSEC-2026-0001", ">=2")],
+        };
+
+        assert_eq!(
+            dependency.vulnerability_status(&dependency.vulnerabilities[0]),
+            VulnerabilityStatus::Insecure
+        );
+    }
+
+    #[test]
+    fn dependency_summary_uses_the_most_severe_advisory_status() {
+        let dependency = AnalyzedDependency {
+            required: VersionReq::parse("^1").unwrap(),
+            latest_that_matches: Some(Version::parse("1.9.0").unwrap()),
+            latest: Some(Version::parse("2.0.0").unwrap()),
+            vulnerabilities: vec![
+                advisory("RUSTSEC-2026-0001", ">=1.5"),
+                advisory("RUSTSEC-2026-0002", ">=2"),
+            ],
+        };
+
+        assert_eq!(
+            dependency.vulnerability_status(&dependency.vulnerabilities[0]),
+            VulnerabilityStatus::PossiblyInsecure
+        );
+        assert_eq!(
+            dependency.vulnerability_status(&dependency.vulnerabilities[1]),
+            VulnerabilityStatus::Insecure
+        );
+        assert_eq!(
+            dependency.vulnerability_status_summary(),
+            Some(VulnerabilityStatus::Insecure)
+        );
+    }
+}
+
 impl AnalyzedDependency {
     pub fn new(required: VersionReq) -> AnalyzedDependency {
         AnalyzedDependency {
@@ -112,16 +183,32 @@ impl AnalyzedDependency {
         !self.vulnerabilities.is_empty()
     }
 
-    /// Check whether this dependency has at laest one known vulnerability
-    /// even when the latest version in the required range is used.
-    pub fn is_always_insecure(&self) -> bool {
-        if let Some(latest) = &self.latest {
-            self.vulnerabilities
-                .iter()
-                .any(|a| a.versions.is_vulnerable(latest))
-        } else {
-            self.is_insecure()
+    /// Classify one advisory against the newest version allowed by the
+    /// dependency requirement.
+    pub fn vulnerability_status(&self, advisory: &Advisory) -> VulnerabilityStatus {
+        match self.latest_that_matches.as_ref() {
+            Some(version) if !advisory.versions.is_vulnerable(version) => {
+                VulnerabilityStatus::PossiblyInsecure
+            }
+            Some(_) | None => VulnerabilityStatus::Insecure,
         }
+    }
+
+    /// Aggregate advisory classifications for dependency-level presentation.
+    pub fn vulnerability_status_summary(&self) -> Option<VulnerabilityStatus> {
+        if !self.is_insecure() {
+            return None;
+        }
+
+        Some(
+            if self.vulnerabilities.iter().any(|advisory| {
+                self.vulnerability_status(advisory) == VulnerabilityStatus::Insecure
+            }) {
+                VulnerabilityStatus::Insecure
+            } else {
+                VulnerabilityStatus::PossiblyInsecure
+            },
+        )
     }
 
     pub fn is_outdated(&self) -> bool {
@@ -223,12 +310,16 @@ impl AnalyzedDependencies {
         let main_insecure = self
             .main
             .iter()
-            .filter(|&(_, dep)| dep.is_always_insecure())
+            .filter(|&(_, dep)| {
+                dep.vulnerability_status_summary() == Some(VulnerabilityStatus::Insecure)
+            })
             .count();
         let build_insecure = self
             .build
             .iter()
-            .filter(|&(_, dep)| dep.is_always_insecure())
+            .filter(|&(_, dep)| {
+                dep.vulnerability_status_summary() == Some(VulnerabilityStatus::Insecure)
+            })
             .count();
         main_insecure + build_insecure
     }
