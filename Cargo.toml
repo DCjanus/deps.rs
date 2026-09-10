@@ -40,7 +40,7 @@ tokio = { version = "1.44.2", features = ["rt", "macros", "sync", "time"] }
 toml = { version = "1", default-features = false, features = ["parse", "serde", "preserve_order"] }
 tracing = "0.1.30"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-badge-maker-rs = "0.1.0"
+badge-maker-rs = "0.2.0"
 base64 = "0.22.1"
 
 [build-dependencies]
