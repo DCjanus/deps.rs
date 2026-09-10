@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="250" height="28">
+  <g>
+    <rect width="119" height="28" fill="#555"/>
+    <rect width="131" height="28" x="119" fill="#8b1"/>
+  </g>
+
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="10" text-rendering="geometricPrecision">
+    <text x="59" y="18" letter-spacing="1">DEPENDENCIES</text>
+    <text x="184" y="18" font-weight="bold" letter-spacing="1">MAYBE INSECURE</text>
+  </g>
+</svg>

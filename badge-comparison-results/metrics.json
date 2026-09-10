@@ -1,0 +1,344 @@
+[
+  {
+    "case": "flat--long-subject",
+    "old_size": [
+      274,
+      20
+    ],
+    "new_size": [
+      264,
+      20
+    ],
+    "canvas_size": [
+      274,
+      20
+    ],
+    "ssim": 0.34510441374446044,
+    "changed_pixel_ratio": 0.5590227088402271,
+    "mean_absolute_error": 0.1265278374123372
+  },
+  {
+    "case": "flat--outdated",
+    "old_size": [
+      192,
+      20
+    ],
+    "new_size": [
+      188,
+      20
+    ],
+    "canvas_size": [
+      192,
+      20
+    ],
+    "ssim": 0.42612766310815103,
+    "changed_pixel_ratio": 0.5350983796296296,
+    "mean_absolute_error": 0.09343882383200193
+  },
+  {
+    "case": "flat--maybe-insecure",
+    "old_size": [
+      186,
+      20
+    ],
+    "new_size": [
+      182,
+      20
+    ],
+    "canvas_size": [
+      186,
+      20
+    ],
+    "ssim": 0.4537160598611505,
+    "changed_pixel_ratio": 0.5155913978494624,
+    "mean_absolute_error": 0.09504380724810832
+  },
+  {
+    "case": "flat--up-to-date",
+    "old_size": [
+      154,
+      20
+    ],
+    "new_size": [
+      152,
+      20
+    ],
+    "canvas_size": [
+      154,
+      20
+    ],
+    "ssim": 0.4682196407896019,
+    "changed_pixel_ratio": 0.4994949494949495,
+    "mean_absolute_error": 0.09407581887974045
+  },
+  {
+    "case": "flat--insecure",
+    "old_size": [
+      142,
+      20
+    ],
+    "new_size": [
+      142,
+      20
+    ],
+    "canvas_size": [
+      142,
+      20
+    ],
+    "ssim": 0.4806310111790878,
+    "changed_pixel_ratio": 0.4899843505477308,
+    "mean_absolute_error": 0.07919149610809373
+  },
+  {
+    "case": "flat--unknown",
+    "old_size": [
+      144,
+      20
+    ],
+    "new_size": [
+      146,
+      20
+    ],
+    "canvas_size": [
+      146,
+      20
+    ],
+    "ssim": 0.5293663593241518,
+    "changed_pixel_ratio": 0.4862633181126332,
+    "mean_absolute_error": 0.07395186080520488
+  },
+  {
+    "case": "flat--none",
+    "old_size": [
+      121,
+      20
+    ],
+    "new_size": [
+      122,
+      20
+    ],
+    "canvas_size": [
+      122,
+      20
+    ],
+    "ssim": 0.483043403730217,
+    "changed_pixel_ratio": 0.47918943533697633,
+    "mean_absolute_error": 0.08438819243544413
+  },
+  {
+    "case": "flat-square--outdated",
+    "old_size": [
+      192,
+      20
+    ],
+    "new_size": [
+      188,
+      20
+    ],
+    "canvas_size": [
+      192,
+      20
+    ],
+    "ssim": 0.614872912141699,
+    "changed_pixel_ratio": 0.19849537037037038,
+    "mean_absolute_error": 0.06705277172597435
+  },
+  {
+    "case": "flat-square--maybe-insecure",
+    "old_size": [
+      186,
+      20
+    ],
+    "new_size": [
+      182,
+      20
+    ],
+    "canvas_size": [
+      186,
+      20
+    ],
+    "ssim": 0.6249137649659031,
+    "changed_pixel_ratio": 0.1924432497013142,
+    "mean_absolute_error": 0.0728011260258783
+  },
+  {
+    "case": "flat-square--up-to-date",
+    "old_size": [
+      154,
+      20
+    ],
+    "new_size": [
+      152,
+      20
+    ],
+    "canvas_size": [
+      154,
+      20
+    ],
+    "ssim": 0.6431269464116136,
+    "changed_pixel_ratio": 0.190007215007215,
+    "mean_absolute_error": 0.07574767280649633
+  },
+  {
+    "case": "for-the-badge--outdated",
+    "old_size": [
+      256,
+      28
+    ],
+    "new_size": [
+      270,
+      28
+    ],
+    "canvas_size": [
+      270,
+      28
+    ],
+    "ssim": 0.7047523722433231,
+    "changed_pixel_ratio": 0.18323045267489713,
+    "mean_absolute_error": 0.07435084321794562
+  },
+  {
+    "case": "for-the-badge--maybe-insecure",
+    "old_size": [
+      250,
+      28
+    ],
+    "new_size": [
+      260,
+      28
+    ],
+    "canvas_size": [
+      260,
+      28
+    ],
+    "ssim": 0.684008597691216,
+    "changed_pixel_ratio": 0.17912087912087912,
+    "mean_absolute_error": 0.08316616390145802
+  },
+  {
+    "case": "flat-square--none",
+    "old_size": [
+      121,
+      20
+    ],
+    "new_size": [
+      122,
+      20
+    ],
+    "canvas_size": [
+      122,
+      20
+    ],
+    "ssim": 0.6500667810780725,
+    "changed_pixel_ratio": 0.17540983606557378,
+    "mean_absolute_error": 0.06677208709834875
+  },
+  {
+    "case": "flat-square--insecure",
+    "old_size": [
+      142,
+      20
+    ],
+    "new_size": [
+      142,
+      20
+    ],
+    "canvas_size": [
+      142,
+      20
+    ],
+    "ssim": 0.6504186464330273,
+    "changed_pixel_ratio": 0.17390453834115807,
+    "mean_absolute_error": 0.057799410844149864
+  },
+  {
+    "case": "flat-square--unknown",
+    "old_size": [
+      144,
+      20
+    ],
+    "new_size": [
+      146,
+      20
+    ],
+    "canvas_size": [
+      146,
+      20
+    ],
+    "ssim": 0.7323548016682394,
+    "changed_pixel_ratio": 0.16681887366818873,
+    "mean_absolute_error": 0.049898080998000416
+  },
+  {
+    "case": "for-the-badge--none",
+    "old_size": [
+      185,
+      28
+    ],
+    "new_size": [
+      179,
+      28
+    ],
+    "canvas_size": [
+      185,
+      28
+    ],
+    "ssim": 0.7290270261858657,
+    "changed_pixel_ratio": 0.1464821964821965,
+    "mean_absolute_error": 0.0718621142150554
+  },
+  {
+    "case": "for-the-badge--unknown",
+    "old_size": [
+      208,
+      28
+    ],
+    "new_size": [
+      212,
+      28
+    ],
+    "canvas_size": [
+      212,
+      28
+    ],
+    "ssim": 0.7215829410332505,
+    "changed_pixel_ratio": 0.13763477088948786,
+    "mean_absolute_error": 0.050847236169100765
+  },
+  {
+    "case": "for-the-badge--insecure",
+    "old_size": [
+      206,
+      28
+    ],
+    "new_size": [
+      209,
+      28
+    ],
+    "canvas_size": [
+      209,
+      28
+    ],
+    "ssim": 0.7253236502312971,
+    "changed_pixel_ratio": 0.12969924812030076,
+    "mean_absolute_error": 0.0530899689310422
+  },
+  {
+    "case": "for-the-badge--up-to-date",
+    "old_size": [
+      218,
+      28
+    ],
+    "new_size": [
+      222,
+      28
+    ],
+    "canvas_size": [
+      222,
+      28
+    ],
+    "ssim": 0.732465865894802,
+    "changed_pixel_ratio": 0.12796725296725298,
+    "mean_absolute_error": 0.059970147551846896
+  }
+]
