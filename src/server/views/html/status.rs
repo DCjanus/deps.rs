@@ -573,7 +573,7 @@ fn render_success(
                     (dependency_tables(crate_name, deps))
                 }
 
-                @if analysis_outcome.any_insecure() {
+                @if analysis_outcome.has_any_vulnerabilities() {
                     (vulnerability_list(&analysis_outcome))
                 }
             }
@@ -612,5 +612,65 @@ pub fn response(
     } else {
         let html = render_html(&title, render_failure(subject_path));
         Err(ServerError::AnalysisFailed(html).into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use semver::VersionReq;
+
+    use super::*;
+    use crate::models::crates::CratePath;
+
+    #[test]
+    fn dev_only_vulnerabilities_render_advisory_targets() {
+        let advisory: Advisory = r#"```toml
+[advisory]
+id = "RUSTSEC-2026-0001"
+package = "demo-dependency"
+date = "2026-01-02"
+
+[versions]
+patched = [">=2"]
+```
+
+# Example
+"#
+        .parse()
+        .unwrap();
+        let mut dev = IndexMap::new();
+        dev.insert(
+            "demo-dependency".parse().unwrap(),
+            AnalyzedDependency {
+                required: VersionReq::parse("^1").unwrap(),
+                latest_that_matches: Some(Version::parse("1.0.0").unwrap()),
+                latest: Some(Version::parse("2.0.0").unwrap()),
+                vulnerabilities: vec![advisory],
+            },
+        );
+        let outcome = AnalyzeDependenciesOutcome {
+            crates: vec![(
+                "demo".parse().unwrap(),
+                AnalyzedDependencies {
+                    main: IndexMap::new(),
+                    dev,
+                    build: IndexMap::new(),
+                },
+            )],
+            duration: Duration::ZERO,
+        };
+        let subject = SubjectPath::Crate(CratePath::from_parts("demo", "1.0.0").unwrap());
+
+        let rendered = render_success(
+            outcome,
+            subject,
+            ExtraConfig::default(),
+            BadgeTabMode::PinnedDefault,
+        )
+        .into_string();
+
+        assert!(rendered.contains("id=\"advisory:RUSTSEC-2026-0001\""));
     }
 }

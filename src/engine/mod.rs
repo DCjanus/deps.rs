@@ -118,6 +118,12 @@ impl AnalyzeDependenciesOutcome {
             .any(|(_, deps)| deps.count_insecure() > 0)
     }
 
+    /// Checks whether any dependency, including development dependencies, has
+    /// vulnerability details that should be rendered.
+    pub fn has_any_vulnerabilities(&self) -> bool {
+        self.any_insecure() || self.count_dev_insecure() > 0
+    }
+
     /// Checks if any always insecure main or build dependencies exist in the scanned crates
     pub fn any_always_insecure(&self) -> bool {
         self.crates
