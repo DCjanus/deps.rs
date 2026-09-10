@@ -34,7 +34,7 @@ use crate::{
 mod fut;
 mod machines;
 
-use self::fut::{analyze_dependencies, crawl_manifest};
+use self::fut::{CrawlManifestError, analyze_dependencies, crawl_manifest};
 
 #[derive(Debug, Clone)]
 pub struct Engine {
@@ -85,6 +85,32 @@ pub struct AnalyzeDependenciesOutcome {
 pub enum AnalyzeCrateDependenciesError {
     ReleaseNotFound,
     Analysis(Error),
+}
+
+#[derive(Debug)]
+pub enum AnalyzeRepoDependenciesError {
+    NotFound,
+    InvalidManifest(Error),
+    Upstream(Error),
+}
+
+impl fmt::Display for AnalyzeRepoDependenciesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound => f.write_str("repository manifest not found"),
+            Self::InvalidManifest(err) => write!(f, "repository manifest is invalid: {err}"),
+            Self::Upstream(err) => write!(f, "repository analysis dependency failed: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for AnalyzeRepoDependenciesError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NotFound => None,
+            Self::InvalidManifest(err) | Self::Upstream(err) => Some(err.as_ref()),
+        }
+    }
 }
 
 impl fmt::Display for AnalyzeCrateDependenciesError {
@@ -187,7 +213,7 @@ impl Engine {
         &self,
         repo_path: RepoPath,
         sub_path: &Option<String>,
-    ) -> Result<AnalyzeDependenciesOutcome, Error> {
+    ) -> Result<AnalyzeDependenciesOutcome, AnalyzeRepoDependenciesError> {
         let start = Instant::now();
 
         let mut entry_point = RelativePath::new("/").to_relative_path_buf();
@@ -198,14 +224,24 @@ impl Engine {
 
         let engine = self.clone();
 
-        let manifest_output = crawl_manifest(self.clone(), repo_path.clone(), entry_point).await?;
+        let manifest_output = crawl_manifest(self.clone(), repo_path.clone(), entry_point)
+            .await
+            .map_err(|err| match err {
+                CrawlManifestError::EntryNotFound => AnalyzeRepoDependenciesError::NotFound,
+                CrawlManifestError::InvalidManifest(err) => {
+                    AnalyzeRepoDependenciesError::InvalidManifest(err)
+                }
+                CrawlManifestError::Upstream(err) => AnalyzeRepoDependenciesError::Upstream(err),
+            })?;
 
         let futures = manifest_output
             .crates
             .into_iter()
             .map(|(crate_name, deps)| async {
-                let analyzed_deps = analyze_dependencies(engine.clone(), deps).await?;
-                Ok::<_, Error>((crate_name, analyzed_deps))
+                let analyzed_deps = analyze_dependencies(engine.clone(), deps)
+                    .await
+                    .map_err(AnalyzeRepoDependenciesError::Upstream)?;
+                Ok::<_, AnalyzeRepoDependenciesError>((crate_name, analyzed_deps))
             })
             .collect::<Vec<_>>();
 
@@ -297,7 +333,7 @@ impl Engine {
         &self,
         repo_path: &RepoPath,
         path: &RelativePathBuf,
-    ) -> Result<String, Error> {
+    ) -> Result<String, crate::interactors::RetrieveFileError> {
         let manifest_path = path.join(RelativePath::new("Cargo.toml"));
 
         let service = self.retrieve_file_at_path.clone();

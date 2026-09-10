@@ -30,7 +30,10 @@ use self::{
     error::ServerError,
 };
 use crate::{
-    engine::{AnalyzeCrateDependenciesError, AnalyzeDependenciesOutcome, Engine},
+    engine::{
+        AnalyzeCrateDependenciesError, AnalyzeDependenciesOutcome, AnalyzeRepoDependenciesError,
+        Engine,
+    },
     models::{
         SubjectPath,
         crates::{CrateName, CratePath},
@@ -105,13 +108,19 @@ pub(crate) async fn repo_status_feed(
     let analysis = engine
         .analyze_repo_dependencies(repo_path.clone(), &extra_config.path)
         .await
-        .map_err(|err| {
-            tracing::error!(%err);
-            ServerError::AnalysisUnavailable
-        })?;
+        .map_err(repo_feed_error)?;
     let subject = views::feed::FeedSubject::repo(repo_path, extra_config.path.as_deref());
 
     Ok(views::feed::response(&request, &analysis, &subject))
+}
+
+fn repo_feed_error(err: AnalyzeRepoDependenciesError) -> ServerError {
+    tracing::error!(%err);
+    match err {
+        AnalyzeRepoDependenciesError::NotFound => ServerError::RepoNotFound,
+        AnalyzeRepoDependenciesError::InvalidManifest(_) => ServerError::RepoManifestInvalid,
+        AnalyzeRepoDependenciesError::Upstream(_) => ServerError::RepoUpstreamUnavailable,
+    }
 }
 
 #[get("/repo/{site:.+?}/{qual}/{name}")]
@@ -590,5 +599,34 @@ impl ExtraConfig {
         } else {
             "dependencies"
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use actix_web::ResponseError as _;
+
+    use super::*;
+
+    #[test]
+    fn repo_feed_errors_preserve_retry_semantics() {
+        assert_eq!(
+            repo_feed_error(AnalyzeRepoDependenciesError::NotFound).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            repo_feed_error(AnalyzeRepoDependenciesError::InvalidManifest(
+                anyhow::anyhow!("invalid manifest")
+            ))
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
+            repo_feed_error(AnalyzeRepoDependenciesError::Upstream(anyhow::anyhow!(
+                "upstream unavailable"
+            )))
+            .status_code(),
+            StatusCode::BAD_GATEWAY
+        );
     }
 }
