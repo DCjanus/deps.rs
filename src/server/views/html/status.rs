@@ -441,6 +441,7 @@ fn render_success(
     subject_path: SubjectPath,
     extra_config: ExtraConfig,
     badge_tab_mode: BadgeTabMode,
+    is_latest_crate_route: bool,
 ) -> Markup {
     let self_path = match subject_path {
         SubjectPath::Repo(ref repo_path) => format!(
@@ -498,7 +499,7 @@ fn render_success(
     let feed_url = status_feed_url(
         &subject_path,
         extra_config.path.as_deref(),
-        badge_tab_mode == BadgeTabMode::LatestDefault,
+        is_latest_crate_route,
     );
     let rss_icon = PreEscaped(fa(FaType::Solid, "rss").unwrap());
 
@@ -590,6 +591,7 @@ pub fn response(
     subject_path: SubjectPath,
     extra_config: ExtraConfig,
     badge_tab_mode: BadgeTabMode,
+    is_latest_crate_route: bool,
 ) -> actix_web::Result<impl Responder> {
     let title = match subject_path {
         SubjectPath::Repo(ref repo_path) => {
@@ -604,11 +606,17 @@ pub fn response(
         let feed_url = status_feed_url(
             &subject_path,
             extra_config.path.as_deref(),
-            badge_tab_mode == BadgeTabMode::LatestDefault,
+            is_latest_crate_route,
         );
         Ok(Html::new(render_html_with_feed(
             &title,
-            render_success(outcome, subject_path, extra_config, badge_tab_mode),
+            render_success(
+                outcome,
+                subject_path,
+                extra_config,
+                badge_tab_mode,
+                is_latest_crate_route,
+            ),
             Some(feed_url.as_str()),
         )))
     } else {
@@ -625,6 +633,37 @@ mod tests {
 
     use super::*;
     use crate::models::crates::CratePath;
+
+    fn empty_outcome() -> AnalyzeDependenciesOutcome {
+        AnalyzeDependenciesOutcome {
+            crates: vec![(
+                "demo".parse().unwrap(),
+                AnalyzedDependencies {
+                    main: IndexMap::new(),
+                    dev: IndexMap::new(),
+                    build: IndexMap::new(),
+                },
+            )],
+            duration: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn latest_feed_identity_does_not_depend_on_badge_tab_mode() {
+        let subject = SubjectPath::Crate(CratePath::from_parts("demo", "1.0.0").unwrap());
+
+        let rendered = render_success(
+            empty_outcome(),
+            subject,
+            ExtraConfig::default(),
+            BadgeTabMode::Hidden,
+            true,
+        )
+        .into_string();
+
+        assert!(rendered.contains("/crate/demo/latest/feed.xml"));
+        assert!(!rendered.contains("/crate/demo/1.0.0/feed.xml"));
+    }
 
     #[test]
     fn dev_only_vulnerabilities_render_advisory_targets() {
@@ -670,6 +709,7 @@ patched = [">=2"]
             subject,
             ExtraConfig::default(),
             BadgeTabMode::PinnedDefault,
+            false,
         )
         .into_string();
 

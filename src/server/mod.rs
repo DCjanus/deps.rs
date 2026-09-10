@@ -183,6 +183,7 @@ async fn repo_status(
                 SubjectPath::Repo(repo_path),
                 extra_knobs,
                 BadgeTabMode::Hidden,
+                false,
             );
 
             Ok(response)
@@ -195,6 +196,7 @@ async fn repo_status(
                 SubjectPath::Repo(repo_path),
                 extra_knobs,
                 BadgeTabMode::Hidden,
+                false,
             );
 
             Ok(response)
@@ -414,6 +416,7 @@ async fn crate_status(
                 SubjectPath::Crate(crate_path),
                 badge_knobs,
                 badge_tab_mode,
+                is_latest_crate_route,
             );
 
             Ok(response)
@@ -457,6 +460,7 @@ fn status_format_analysis(
     subject_path: SubjectPath,
     badge_knobs: ExtraConfig,
     badge_tab_mode: BadgeTabMode,
+    is_latest_crate_route: bool,
 ) -> impl Responder {
     match format {
         StatusFormat::Svg => Either::Left(views::badge::response(
@@ -469,6 +473,7 @@ fn status_format_analysis(
             subject_path,
             badge_knobs,
             badge_tab_mode,
+            is_latest_crate_route,
         )),
         StatusFormat::ShieldJson => Either::Left(views::badge::shield_json_response(
             analysis_outcome.as_ref(),
