@@ -120,7 +120,8 @@ fn repo_feed_error(err: AnalyzeRepoDependenciesError) -> ServerError {
     match err {
         AnalyzeRepoDependenciesError::NotFound => ServerError::RepoNotFound,
         AnalyzeRepoDependenciesError::InvalidManifest(_) => ServerError::RepoManifestInvalid,
-        AnalyzeRepoDependenciesError::Upstream(_) => ServerError::RepoUpstreamUnavailable,
+        AnalyzeRepoDependenciesError::DependencyNotFound(_) => ServerError::DependencyNotFound,
+        AnalyzeRepoDependenciesError::Upstream(_) => ServerError::DependencyUpstreamUnavailable,
     }
 }
 
@@ -137,6 +138,7 @@ fn crate_analysis_error(err: AnalyzeCrateDependenciesError) -> ServerError {
     match err {
         AnalyzeCrateDependenciesError::CrateNotFound
         | AnalyzeCrateDependenciesError::ReleaseNotFound => ServerError::CrateNotFound,
+        AnalyzeCrateDependenciesError::DependencyNotFound(_) => ServerError::DependencyNotFound,
         AnalyzeCrateDependenciesError::Analysis(_) => ServerError::AnalysisUnavailable,
     }
 }
@@ -635,6 +637,13 @@ mod tests {
             StatusCode::UNPROCESSABLE_ENTITY
         );
         assert_eq!(
+            repo_feed_error(AnalyzeRepoDependenciesError::DependencyNotFound(
+                "missing".parse().unwrap()
+            ))
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
             repo_feed_error(AnalyzeRepoDependenciesError::Upstream(anyhow::anyhow!(
                 "upstream unavailable"
             )))
@@ -657,6 +666,13 @@ mod tests {
         assert_eq!(
             crate_analysis_error(AnalyzeCrateDependenciesError::CrateNotFound).status_code(),
             StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            crate_analysis_error(AnalyzeCrateDependenciesError::DependencyNotFound(
+                "missing".parse().unwrap()
+            ))
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
         );
         assert_eq!(
             crate_analysis_error(AnalyzeCrateDependenciesError::Analysis(anyhow::anyhow!(

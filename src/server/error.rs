@@ -30,8 +30,11 @@ pub(crate) enum ServerError {
     #[display("Repository manifest could not be analyzed")]
     RepoManifestInvalid,
 
-    #[display("Repository source is temporarily unavailable")]
-    RepoUpstreamUnavailable,
+    #[display("Dependency crate not found")]
+    DependencyNotFound,
+
+    #[display("An upstream dependency is temporarily unavailable")]
+    DependencyUpstreamUnavailable,
 
     #[display("Crate/repo analysis failed")]
     AnalysisFailed(Markup),
@@ -47,7 +50,8 @@ impl ResponseError for ServerError {
             ServerError::AnalysisUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             ServerError::RepoNotFound => StatusCode::NOT_FOUND,
             ServerError::RepoManifestInvalid => StatusCode::UNPROCESSABLE_ENTITY,
-            ServerError::RepoUpstreamUnavailable => StatusCode::BAD_GATEWAY,
+            ServerError::DependencyNotFound => StatusCode::UNPROCESSABLE_ENTITY,
+            ServerError::DependencyUpstreamUnavailable => StatusCode::BAD_GATEWAY,
             ServerError::AnalysisFailed(_) => StatusCode::BAD_REQUEST,
         }
     }
@@ -91,7 +95,15 @@ impl ResponseError for ServerError {
                 .0,
             ),
 
-            ServerError::RepoUpstreamUnavailable => {
+            ServerError::DependencyNotFound => res.body(
+                render(
+                    self.to_string(),
+                    "Please check the dependency names in the Cargo manifests.",
+                )
+                .0,
+            ),
+
+            ServerError::DependencyUpstreamUnavailable => {
                 res.body(render(self.to_string(), "Please try again later.").0)
             }
 

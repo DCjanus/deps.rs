@@ -85,6 +85,7 @@ pub struct AnalyzeDependenciesOutcome {
 pub enum AnalyzeCrateDependenciesError {
     CrateNotFound,
     ReleaseNotFound,
+    DependencyNotFound(CrateName),
     Analysis(Error),
 }
 
@@ -92,6 +93,13 @@ pub enum AnalyzeCrateDependenciesError {
 pub enum AnalyzeRepoDependenciesError {
     NotFound,
     InvalidManifest(Error),
+    DependencyNotFound(CrateName),
+    Upstream(Error),
+}
+
+#[derive(Debug)]
+pub enum AnalyzeDependenciesError {
+    DependencyNotFound(CrateName),
     Upstream(Error),
 }
 
@@ -100,6 +108,9 @@ impl fmt::Display for AnalyzeRepoDependenciesError {
         match self {
             Self::NotFound => f.write_str("repository manifest not found"),
             Self::InvalidManifest(err) => write!(f, "repository manifest is invalid: {err}"),
+            Self::DependencyNotFound(name) => {
+                write!(f, "dependency crate '{}' not found", name.as_ref())
+            }
             Self::Upstream(err) => write!(f, "repository analysis dependency failed: {err}"),
         }
     }
@@ -108,7 +119,7 @@ impl fmt::Display for AnalyzeRepoDependenciesError {
 impl std::error::Error for AnalyzeRepoDependenciesError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::NotFound => None,
+            Self::NotFound | Self::DependencyNotFound(_) => None,
             Self::InvalidManifest(err) | Self::Upstream(err) => Some(err.as_ref()),
         }
     }
@@ -119,6 +130,9 @@ impl fmt::Display for AnalyzeCrateDependenciesError {
         match self {
             Self::CrateNotFound => f.write_str("crate not found"),
             Self::ReleaseNotFound => f.write_str("crate release not found"),
+            Self::DependencyNotFound(name) => {
+                write!(f, "dependency crate '{}' not found", name.as_ref())
+            }
             Self::Analysis(err) => write!(f, "crate analysis failed: {err}"),
         }
     }
@@ -127,7 +141,7 @@ impl fmt::Display for AnalyzeCrateDependenciesError {
 impl std::error::Error for AnalyzeCrateDependenciesError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::CrateNotFound | Self::ReleaseNotFound => None,
+            Self::CrateNotFound | Self::ReleaseNotFound | Self::DependencyNotFound(_) => None,
             Self::Analysis(err) => Some(err.as_ref()),
         }
     }
@@ -240,9 +254,17 @@ impl Engine {
             .crates
             .into_iter()
             .map(|(crate_name, deps)| async {
-                let analyzed_deps = analyze_dependencies(engine.clone(), deps)
-                    .await
-                    .map_err(AnalyzeRepoDependenciesError::Upstream)?;
+                let analyzed_deps =
+                    analyze_dependencies(engine.clone(), deps)
+                        .await
+                        .map_err(|err| match err {
+                            AnalyzeDependenciesError::DependencyNotFound(name) => {
+                                AnalyzeRepoDependenciesError::DependencyNotFound(name)
+                            }
+                            AnalyzeDependenciesError::Upstream(err) => {
+                                AnalyzeRepoDependenciesError::Upstream(err)
+                            }
+                        })?;
                 Ok::<_, AnalyzeRepoDependenciesError>((crate_name, analyzed_deps))
             })
             .collect::<Vec<_>>();
@@ -288,7 +310,14 @@ impl Engine {
             Some(release) => {
                 let analyzed_deps = analyze_dependencies(engine.clone(), release.deps.clone())
                     .await
-                    .map_err(AnalyzeCrateDependenciesError::Analysis)?;
+                    .map_err(|err| match err {
+                        AnalyzeDependenciesError::DependencyNotFound(name) => {
+                            AnalyzeCrateDependenciesError::DependencyNotFound(name)
+                        }
+                        AnalyzeDependenciesError::Upstream(err) => {
+                            AnalyzeCrateDependenciesError::Analysis(err)
+                        }
+                    })?;
 
                 let crates = vec![(crate_path.name, analyzed_deps)];
                 let duration = start.elapsed();
@@ -319,7 +348,7 @@ impl Engine {
     fn fetch_releases<'a, I>(
         &'a self,
         names: I,
-    ) -> LocalBoxStream<'a, anyhow::Result<Vec<CrateRelease>>>
+    ) -> LocalBoxStream<'a, Result<Vec<CrateRelease>, QueryCrateError>>
     where
         I: IntoIterator<Item = CrateName>,
         <I as IntoIterator>::IntoIter: Send + 'a,
@@ -352,7 +381,7 @@ impl Engine {
 
 async fn resolve_crate_with_engine(
     (crate_name, engine): (CrateName, Engine),
-) -> anyhow::Result<Vec<CrateRelease>> {
+) -> Result<Vec<CrateRelease>, QueryCrateError> {
     let crate_res = engine.query_crate.cached_query(crate_name).await?;
     Ok(crate_res.releases)
 }
