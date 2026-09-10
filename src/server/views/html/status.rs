@@ -6,16 +6,17 @@ use pulldown_cmark::{Parser, html};
 use rustsec::advisory::Advisory;
 use semver::Version;
 
-use super::render_html;
+use super::{render_html, render_html_with_feed};
 use crate::{
     engine::AnalyzeDependenciesOutcome,
     models::{
         SubjectPath,
-        crates::{AnalyzedDependencies, AnalyzedDependency, CrateName},
+        crates::{AnalyzedDependencies, AnalyzedDependency, CrateName, VulnerabilityStatus},
         repo::RepoSite,
     },
     server::{
-        BadgeTabMode, ExtraConfig, assets::STATIC_LINKS_JS_PATH, error::ServerError, views::badge,
+        BadgeTabMode, ExtraConfig, advisory_anchor, assets::STATIC_LINKS_JS_PATH,
+        dependency_anchor, error::ServerError, status_feed_url, views::badge,
     },
 };
 
@@ -39,24 +40,31 @@ fn dependency_tables(crate_name: &CrateName, deps: &AnalyzedDependencies) -> Mar
         }
 
         @if !deps.main.is_empty() {
-            (dependency_table("Dependencies", &deps.main))
+            (dependency_table(crate_name, "main", "Dependencies", &deps.main))
         }
 
         @if !deps.dev.is_empty() {
-            (dependency_table("Dev dependencies", &deps.dev))
+            (dependency_table(crate_name, "dev", "Dev dependencies", &deps.dev))
         }
 
         @if !deps.build.is_empty() {
-            (dependency_table("Build dependencies", &deps.build))
+            (dependency_table(crate_name, "build", "Build dependencies", &deps.build))
         }
     }
 }
 
-fn dependency_table(title: &str, deps: &IndexMap<CrateName, AnalyzedDependency>) -> Markup {
+fn dependency_table(
+    crate_name: &CrateName,
+    dependency_kind: &str,
+    title: &str,
+    deps: &IndexMap<CrateName, AnalyzedDependency>,
+) -> Markup {
     let count_total = deps.len();
     let count_always_insecure = deps
         .iter()
-        .filter(|&(_, dep)| dep.is_always_insecure())
+        .filter(|&(_, dep)| {
+            dep.vulnerability_status_summary() == Some(VulnerabilityStatus::Insecure)
+        })
         .count();
     let count_insecure = deps.iter().filter(|&(_, dep)| dep.is_insecure()).count();
     let count_outdated = deps.iter().filter(|&(_, dep)| dep.is_outdated()).count();
@@ -89,7 +97,7 @@ fn dependency_table(title: &str, deps: &IndexMap<CrateName, AnalyzedDependency>)
             }
             tbody {
                 @for (name, dep) in deps {
-                    tr {
+                    tr id=(dependency_anchor(crate_name.as_ref(), dependency_kind, name.as_ref())) {
                         td {
                             a class="has-text-grey" href=(get_crates_url(name)) {
                                 { (fa_cube) }
@@ -111,7 +119,7 @@ fn dependency_table(title: &str, deps: &IndexMap<CrateName, AnalyzedDependency>)
                             }
                         }
                         td class="has-text-right" {
-                            @if dep.is_always_insecure() {
+                            @if dep.vulnerability_status_summary() == Some(VulnerabilityStatus::Insecure) {
                                 span class="tag is-danger" { "insecure" }
                             } @else if dep.is_outdated() {
                                 span class="tag is-warning" { "out of date" }
@@ -291,7 +299,7 @@ fn vulnerability_list(analysis_outcome: &AnalyzeDependenciesOutcome) -> Markup {
         h3 class="title is-3" id="vulnerabilities" { "Security Vulnerabilities" }
 
         @for vuln in vulnerabilities {
-            div class="box" {
+            div class="box" id=(advisory_anchor(vuln.id().as_str())) {
                 h3 class="title is-4" { code { (vuln.metadata.package.as_str()) } ": " (vuln.title()) }
                 p class="subtitle is-5" style="margin-top: -0.5rem;" { a href=(build_rustsec_link(vuln)) { (vuln.id().to_string()) } }
 
@@ -433,6 +441,7 @@ fn render_success(
     subject_path: SubjectPath,
     extra_config: ExtraConfig,
     badge_tab_mode: BadgeTabMode,
+    is_latest_crate_route: bool,
 ) -> Markup {
     let self_path = match subject_path {
         SubjectPath::Repo(ref repo_path) => format!(
@@ -487,6 +496,12 @@ fn render_success(
     };
     let latest_panel_hidden = active_badge_tab != "latest";
     let pinned_panel_hidden = active_badge_tab != "pinned";
+    let feed_url = status_feed_url(
+        &subject_path,
+        extra_config.path.as_deref(),
+        is_latest_crate_route,
+    );
+    let rss_icon = PreEscaped(fa(FaType::Solid, "rss").unwrap());
 
     html! {
         section class=(format!("hero {hero_class}")) {
@@ -503,7 +518,12 @@ fn render_success(
                         }
                     }
 
-                    img src=(status_data_uri);
+                    div class="status-badge-row" {
+                        img src=(status_data_uri);
+                        a class="rss-feed-link" href=(feed_url.as_str()) title="RSS feed" aria-label="RSS feed" {
+                            { (rss_icon) }
+                        }
+                    }
                 }
             }
             div class="hero-footer" {
@@ -556,7 +576,7 @@ fn render_success(
                     (dependency_tables(crate_name, deps))
                 }
 
-                @if analysis_outcome.any_insecure() {
+                @if analysis_outcome.has_any_vulnerabilities() {
                     (vulnerability_list(&analysis_outcome))
                 }
             }
@@ -571,6 +591,7 @@ pub fn response(
     subject_path: SubjectPath,
     extra_config: ExtraConfig,
     badge_tab_mode: BadgeTabMode,
+    is_latest_crate_route: bool,
 ) -> actix_web::Result<impl Responder> {
     let title = match subject_path {
         SubjectPath::Repo(ref repo_path) => {
@@ -582,12 +603,116 @@ pub fn response(
     };
 
     if let Some(outcome) = analysis_outcome {
-        Ok(Html::new(render_html(
+        let feed_url = status_feed_url(
+            &subject_path,
+            extra_config.path.as_deref(),
+            is_latest_crate_route,
+        );
+        Ok(Html::new(render_html_with_feed(
             &title,
-            render_success(outcome, subject_path, extra_config, badge_tab_mode),
+            render_success(
+                outcome,
+                subject_path,
+                extra_config,
+                badge_tab_mode,
+                is_latest_crate_route,
+            ),
+            Some(feed_url.as_str()),
         )))
     } else {
         let html = render_html(&title, render_failure(subject_path));
         Err(ServerError::AnalysisFailed(html).into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use semver::VersionReq;
+
+    use super::*;
+    use crate::models::crates::CratePath;
+
+    fn empty_outcome() -> AnalyzeDependenciesOutcome {
+        AnalyzeDependenciesOutcome {
+            crates: vec![(
+                "demo".parse().unwrap(),
+                AnalyzedDependencies {
+                    main: IndexMap::new(),
+                    dev: IndexMap::new(),
+                    build: IndexMap::new(),
+                },
+            )],
+            duration: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn latest_feed_identity_does_not_depend_on_badge_tab_mode() {
+        let subject = SubjectPath::Crate(CratePath::from_parts("demo", "1.0.0").unwrap());
+
+        let rendered = render_success(
+            empty_outcome(),
+            subject,
+            ExtraConfig::default(),
+            BadgeTabMode::Hidden,
+            true,
+        )
+        .into_string();
+
+        assert!(rendered.contains("/crate/demo/latest/feed.xml"));
+        assert!(!rendered.contains("/crate/demo/1.0.0/feed.xml"));
+    }
+
+    #[test]
+    fn dev_only_vulnerabilities_render_advisory_targets() {
+        let advisory: Advisory = r#"```toml
+[advisory]
+id = "RUSTSEC-2026-0001"
+package = "demo-dependency"
+date = "2026-01-02"
+
+[versions]
+patched = [">=2"]
+```
+
+# Example
+"#
+        .parse()
+        .unwrap();
+        let mut dev = IndexMap::new();
+        dev.insert(
+            "demo-dependency".parse().unwrap(),
+            AnalyzedDependency {
+                required: VersionReq::parse("^1").unwrap(),
+                latest_that_matches: Some(Version::parse("1.0.0").unwrap()),
+                latest: Some(Version::parse("2.0.0").unwrap()),
+                vulnerabilities: vec![advisory],
+            },
+        );
+        let outcome = AnalyzeDependenciesOutcome {
+            crates: vec![(
+                "demo".parse().unwrap(),
+                AnalyzedDependencies {
+                    main: IndexMap::new(),
+                    dev,
+                    build: IndexMap::new(),
+                },
+            )],
+            duration: Duration::ZERO,
+        };
+        let subject = SubjectPath::Crate(CratePath::from_parts("demo", "1.0.0").unwrap());
+
+        let rendered = render_success(
+            outcome,
+            subject,
+            ExtraConfig::default(),
+            BadgeTabMode::PinnedDefault,
+            false,
+        )
+        .into_string();
+
+        assert!(rendered.contains("id=\"advisory:RUSTSEC-2026-0001\""));
     }
 }

@@ -1,9 +1,9 @@
-use anyhow::Error;
 use futures_util::StreamExt as _;
 
 use crate::{
     Engine,
-    engine::machines::analyzer::DependencyAnalyzer,
+    engine::{AnalyzeDependenciesError, machines::analyzer::DependencyAnalyzer},
+    interactors::crates::QueryCrateError,
     models::crates::{AnalyzedDependencies, CrateDep, CrateDeps, CrateName},
 };
 
@@ -14,8 +14,11 @@ fn filter_external((name, dep): (CrateName, CrateDep)) -> Option<CrateName> {
 pub async fn analyze_dependencies(
     engine: Engine,
     deps: CrateDeps,
-) -> Result<AnalyzedDependencies, Error> {
-    let advisory_db = engine.fetch_advisory_db().await?;
+) -> Result<AnalyzedDependencies, AnalyzeDependenciesError> {
+    let advisory_db = engine
+        .fetch_advisory_db()
+        .await
+        .map_err(AnalyzeDependenciesError::Upstream)?;
     let mut analyzer = DependencyAnalyzer::new(&deps, Some(advisory_db));
 
     let main_deps = deps.main.into_iter().filter_map(filter_external);
@@ -26,7 +29,10 @@ pub async fn analyze_dependencies(
     let mut releases = engine.fetch_releases(deps_iter);
 
     while let Some(release) = releases.next().await {
-        let release = release?;
+        let release = release.map_err(|err| match err {
+            QueryCrateError::NotFound(name) => AnalyzeDependenciesError::DependencyNotFound(name),
+            QueryCrateError::Query(err) => AnalyzeDependenciesError::Upstream(err),
+        })?;
         analyzer.process(release)
     }
 

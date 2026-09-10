@@ -1,4 +1,25 @@
 // Badge tabs integrated with standard Bulma pre blocks
+.status-badge-row
+  align-items: center
+  display: inline-flex
+  gap: 0.45rem
+
+.rss-feed-link
+  color: rgba(255, 255, 255, 0.9)
+  display: inline-flex
+  line-height: 1
+
+  &:hover
+    color: $white
+
+  &:focus-visible
+    outline: 2px solid rgba(255, 255, 255, 0.8)
+    outline-offset: 2px
+
+  svg
+    height: 0.8rem
+    width: 0.8rem
+
 .badge-group
   display: flex
   flex-direction: column

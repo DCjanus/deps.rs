@@ -1,7 +1,7 @@
 use std::{env, sync::LazyLock};
 
 use actix_web::{
-    Either, HttpResponse, Resource, Responder, get,
+    Either, HttpRequest, HttpResponse, Resource, Responder, get,
     http::{
         StatusCode, Uri,
         header::{ContentType, ETag, EntityTag},
@@ -17,6 +17,7 @@ use badge::BadgeStyle;
 use futures_util::future;
 use semver::VersionReq;
 use serde::Deserialize;
+use url::Url;
 
 mod assets;
 mod error;
@@ -29,7 +30,11 @@ use self::{
     error::ServerError,
 };
 use crate::{
-    engine::{AnalyzeDependenciesOutcome, Engine},
+    engine::{
+        AnalyzeCrateDependenciesError, AnalyzeDependenciesOutcome, AnalyzeRepoDependenciesError,
+        Engine,
+    },
+    interactors::crates::QueryCrateError,
     models::{
         SubjectPath,
         crates::{CrateName, CratePath},
@@ -89,6 +94,55 @@ pub(crate) async fn repo_status_shield_json(
     repo_status(engine, uri, params, StatusFormat::ShieldJson).await
 }
 
+#[get("/repo/{site:.+?}/{qual}/{name}/feed.xml")]
+pub(crate) async fn repo_status_feed(
+    ThinData(engine): ThinData<Engine>,
+    request: HttpRequest,
+    uri: Uri,
+    Path((site, qual, name)): Path<(String, String, String)>,
+) -> actix_web::Result<impl Responder> {
+    let extra_config = ExtraConfig::from_query_string(uri.query());
+    let repo_path = RepoPath::from_parts(&site, &qual, &name).map_err(|err| {
+        tracing::error!(%err);
+        ServerError::BadRepoPath
+    })?;
+    let analysis = engine
+        .analyze_repo_dependencies(repo_path.clone(), &extra_config.path)
+        .await
+        .map_err(repo_feed_error)?;
+    let subject = views::feed::FeedSubject::repo(repo_path, extra_config.path.as_deref());
+
+    Ok(views::feed::response(&request, &analysis, &subject))
+}
+
+fn repo_feed_error(err: AnalyzeRepoDependenciesError) -> ServerError {
+    tracing::error!(%err);
+    match err {
+        AnalyzeRepoDependenciesError::NotFound => ServerError::RepoNotFound,
+        AnalyzeRepoDependenciesError::InvalidManifest(_) => ServerError::RepoManifestInvalid,
+        AnalyzeRepoDependenciesError::DependencyNotFound(_) => ServerError::DependencyNotFound,
+        AnalyzeRepoDependenciesError::Upstream(_) => ServerError::DependencyUpstreamUnavailable,
+    }
+}
+
+fn crate_query_error(err: QueryCrateError) -> ServerError {
+    tracing::error!(%err);
+    match err {
+        QueryCrateError::NotFound(_) => ServerError::CrateNotFound,
+        QueryCrateError::Query(_) => ServerError::AnalysisUnavailable,
+    }
+}
+
+fn crate_analysis_error(err: AnalyzeCrateDependenciesError) -> ServerError {
+    tracing::error!(%err);
+    match err {
+        AnalyzeCrateDependenciesError::CrateNotFound
+        | AnalyzeCrateDependenciesError::ReleaseNotFound => ServerError::CrateNotFound,
+        AnalyzeCrateDependenciesError::DependencyNotFound(_) => ServerError::DependencyNotFound,
+        AnalyzeCrateDependenciesError::Analysis(_) => ServerError::AnalysisUnavailable,
+    }
+}
+
 #[get("/repo/{site:.+?}/{qual}/{name}")]
 pub(crate) async fn repo_status_html(
     ThinData(engine): ThinData<Engine>,
@@ -129,6 +183,7 @@ async fn repo_status(
                 SubjectPath::Repo(repo_path),
                 extra_knobs,
                 BadgeTabMode::Hidden,
+                false,
             );
 
             Ok(response)
@@ -141,6 +196,7 @@ async fn repo_status(
                 SubjectPath::Repo(repo_path),
                 extra_knobs,
                 BadgeTabMode::Hidden,
+                false,
             );
 
             Ok(response)
@@ -170,18 +226,25 @@ async fn crate_redirect(
             tracing::error!(%err);
         });
 
-    let Ok(Some(release)) = release_result else {
-        return Err(ServerError::CrateFetchFailed.into());
+    let release = match release_result {
+        Ok(Some(release)) => release,
+        Ok(None) | Err(QueryCrateError::NotFound(_)) => {
+            return Err(ServerError::CrateNotFound.into());
+        }
+        Err(err) => return Err(crate_query_error(err).into()),
     };
 
-    let redirect_url = format!(
-        "{}/crate/{}/{}",
-        &SELF_BASE_URL as &str,
-        release.name.as_ref(),
-        release.version
-    );
+    let redirect_url = crate_default_redirect_url(&release);
 
     Ok(Redirect::to(redirect_url))
+}
+
+fn crate_default_redirect_url(release: &crate::models::crates::CrateRelease) -> String {
+    format!(
+        "{}/crate/{}/latest",
+        &SELF_BASE_URL as &str,
+        release.name.as_ref()
+    )
 }
 
 #[get("/crate/{name}/{version}")]
@@ -220,6 +283,15 @@ async fn crate_latest_status_shield_json(
     crate_status(engine, uri, (name, None), StatusFormat::ShieldJson).await
 }
 
+#[get("/crate/{name}/latest/feed.xml")]
+pub(crate) async fn crate_latest_status_feed(
+    ThinData(engine): ThinData<Engine>,
+    request: HttpRequest,
+    Path((name,)): Path<(String,)>,
+) -> actix_web::Result<impl Responder> {
+    crate_status_feed(engine, request, name, None).await
+}
+
 #[get("/crate/{name}/{version}/status.svg")]
 async fn crate_status_svg(
     ThinData(engine): ThinData<Engine>,
@@ -236,6 +308,56 @@ async fn crate_status_shield_json(
     Path((name, version)): Path<(String, String)>,
 ) -> actix_web::Result<impl Responder> {
     crate_status(engine, uri, (name, Some(version)), StatusFormat::ShieldJson).await
+}
+
+#[get("/crate/{name}/{version}/feed.xml")]
+pub(crate) async fn crate_pinned_status_feed(
+    ThinData(engine): ThinData<Engine>,
+    request: HttpRequest,
+    Path((name, version)): Path<(String, String)>,
+) -> actix_web::Result<impl Responder> {
+    crate_status_feed(engine, request, name, Some(version)).await
+}
+
+async fn crate_status_feed(
+    engine: Engine,
+    request: HttpRequest,
+    name: String,
+    version: Option<String>,
+) -> actix_web::Result<impl Responder> {
+    let latest_route = version.is_none();
+    let version = match version {
+        Some(version) => version,
+        None => {
+            let crate_name = name.parse().map_err(|err| {
+                tracing::error!(%err);
+                ServerError::BadCratePath
+            })?;
+            match engine
+                .find_latest_stable_crate_release(crate_name, VersionReq::STAR)
+                .await
+            {
+                Ok(Some(release)) => release.version.to_string(),
+                Ok(None) => return Err(ServerError::CrateNotFound.into()),
+                Err(err) => return Err(crate_query_error(err).into()),
+            }
+        }
+    };
+    let crate_path = CratePath::from_parts(&name, &version).map_err(|err| {
+        tracing::error!(%err);
+        ServerError::BadCratePath
+    })?;
+    let analysis = match engine.analyze_crate_dependencies(crate_path.clone()).await {
+        Ok(analysis) => analysis,
+        Err(err) => return Err(crate_analysis_error(err).into()),
+    };
+    let subject = if latest_route {
+        views::feed::FeedSubject::crate_latest(crate_path)
+    } else {
+        views::feed::FeedSubject::crate_pinned(crate_path)
+    };
+
+    Ok(views::feed::response(&request, &analysis, &subject))
 }
 
 async fn crate_status(
@@ -262,10 +384,7 @@ async fn crate_status(
 
                 Ok(None) => return Err(ServerError::CrateNotFound.into()),
 
-                Err(err) => {
-                    tracing::error!(%err);
-                    return Err(ServerError::CrateFetchFailed.into());
-                }
+                Err(err) => return Err(crate_query_error(err).into()),
             }
         }
     };
@@ -297,6 +416,7 @@ async fn crate_status(
                 SubjectPath::Crate(crate_path),
                 badge_knobs,
                 badge_tab_mode,
+                is_latest_crate_route,
             );
 
             Ok(response)
@@ -340,6 +460,7 @@ fn status_format_analysis(
     subject_path: SubjectPath,
     badge_knobs: ExtraConfig,
     badge_tab_mode: BadgeTabMode,
+    is_latest_crate_route: bool,
 ) -> impl Responder {
     match format {
         StatusFormat::Svg => Either::Left(views::badge::response(
@@ -352,12 +473,38 @@ fn status_format_analysis(
             subject_path,
             badge_knobs,
             badge_tab_mode,
+            is_latest_crate_route,
         )),
         StatusFormat::ShieldJson => Either::Left(views::badge::shield_json_response(
             analysis_outcome.as_ref(),
             badge_knobs,
         )),
     }
+}
+
+pub(crate) fn dependency_anchor(package: &str, kind: &str, dependency: &str) -> String {
+    format!("dependency:{kind}:{package}:{dependency}")
+}
+
+pub(crate) fn advisory_anchor(advisory_id: &str) -> String {
+    format!("advisory:{advisory_id}")
+}
+
+pub(crate) fn status_feed_url(
+    subject_path: &SubjectPath,
+    path: Option<&str>,
+    latest_crate_route: bool,
+) -> Url {
+    let subject = match subject_path {
+        SubjectPath::Repo(repo) => views::feed::FeedSubject::repo(repo.clone(), path),
+        SubjectPath::Crate(crate_path) if latest_crate_route => {
+            views::feed::FeedSubject::crate_latest(crate_path.clone())
+        }
+        SubjectPath::Crate(crate_path) => {
+            views::feed::FeedSubject::crate_pinned(crate_path.clone())
+        }
+    };
+    subject.feed_url()
 }
 
 pub(crate) fn static_files(cfg: &mut ServiceConfig) {
@@ -472,5 +619,87 @@ impl ExtraConfig {
         } else {
             "dependencies"
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use actix_web::ResponseError as _;
+
+    use super::*;
+
+    #[test]
+    fn repo_feed_errors_preserve_retry_semantics() {
+        assert_eq!(
+            repo_feed_error(AnalyzeRepoDependenciesError::NotFound).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            repo_feed_error(AnalyzeRepoDependenciesError::InvalidManifest(
+                anyhow::anyhow!("invalid manifest")
+            ))
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
+            repo_feed_error(AnalyzeRepoDependenciesError::DependencyNotFound(
+                "missing".parse().unwrap()
+            ))
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
+            repo_feed_error(AnalyzeRepoDependenciesError::Upstream(anyhow::anyhow!(
+                "upstream unavailable"
+            )))
+            .status_code(),
+            StatusCode::BAD_GATEWAY
+        );
+    }
+
+    #[test]
+    fn crate_feed_errors_distinguish_missing_crates_from_analysis_failures() {
+        assert_eq!(
+            crate_query_error(QueryCrateError::NotFound("missing".parse().unwrap())).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            crate_query_error(QueryCrateError::Query(anyhow::anyhow!("index failure")))
+                .status_code(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            crate_analysis_error(AnalyzeCrateDependenciesError::CrateNotFound).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            crate_analysis_error(AnalyzeCrateDependenciesError::DependencyNotFound(
+                "missing".parse().unwrap()
+            ))
+            .status_code(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
+            crate_analysis_error(AnalyzeCrateDependenciesError::Analysis(anyhow::anyhow!(
+                "analysis failure"
+            )))
+            .status_code(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn versionless_crate_urls_preserve_latest_intent() {
+        let release = crate::models::crates::CrateRelease {
+            name: "demo".parse().unwrap(),
+            version: "1.2.3".parse().unwrap(),
+            deps: Default::default(),
+            yanked: false,
+        };
+
+        assert_eq!(
+            crate_default_redirect_url(&release),
+            "http://localhost:8080/crate/demo/latest"
+        );
     }
 }

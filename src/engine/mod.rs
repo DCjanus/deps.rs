@@ -1,11 +1,12 @@
 use std::{
     collections::HashSet,
+    fmt,
     sync::{Arc, LazyLock},
     time::{Duration, Instant},
 };
 
 use actix_web::dev::Service;
-use anyhow::{Error, anyhow};
+use anyhow::Error;
 use futures_util::{
     StreamExt as _,
     future::try_join_all,
@@ -19,7 +20,7 @@ use crate::{
     ManagedIndex,
     interactors::{
         RetrieveFileAtPath,
-        crates::{GetPopularCrates, QueryCrate},
+        crates::{GetPopularCrates, QueryCrate, QueryCrateError},
         github::GetPopularRepos,
         rustsec::FetchAdvisoryDatabase,
     },
@@ -33,7 +34,7 @@ use crate::{
 mod fut;
 mod machines;
 
-use self::fut::{analyze_dependencies, crawl_manifest};
+use self::fut::{CrawlManifestError, analyze_dependencies, crawl_manifest};
 
 #[derive(Debug, Clone)]
 pub struct Engine {
@@ -80,6 +81,72 @@ pub struct AnalyzeDependenciesOutcome {
     pub duration: Duration,
 }
 
+#[derive(Debug)]
+pub enum AnalyzeCrateDependenciesError {
+    CrateNotFound,
+    ReleaseNotFound,
+    DependencyNotFound(CrateName),
+    Analysis(Error),
+}
+
+#[derive(Debug)]
+pub enum AnalyzeRepoDependenciesError {
+    NotFound,
+    InvalidManifest(Error),
+    DependencyNotFound(CrateName),
+    Upstream(Error),
+}
+
+#[derive(Debug)]
+pub enum AnalyzeDependenciesError {
+    DependencyNotFound(CrateName),
+    Upstream(Error),
+}
+
+impl fmt::Display for AnalyzeRepoDependenciesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound => f.write_str("repository manifest not found"),
+            Self::InvalidManifest(err) => write!(f, "repository manifest is invalid: {err}"),
+            Self::DependencyNotFound(name) => {
+                write!(f, "dependency crate '{}' not found", name.as_ref())
+            }
+            Self::Upstream(err) => write!(f, "repository analysis dependency failed: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for AnalyzeRepoDependenciesError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NotFound | Self::DependencyNotFound(_) => None,
+            Self::InvalidManifest(err) | Self::Upstream(err) => Some(err.as_ref()),
+        }
+    }
+}
+
+impl fmt::Display for AnalyzeCrateDependenciesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CrateNotFound => f.write_str("crate not found"),
+            Self::ReleaseNotFound => f.write_str("crate release not found"),
+            Self::DependencyNotFound(name) => {
+                write!(f, "dependency crate '{}' not found", name.as_ref())
+            }
+            Self::Analysis(err) => write!(f, "crate analysis failed: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for AnalyzeCrateDependenciesError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::CrateNotFound | Self::ReleaseNotFound | Self::DependencyNotFound(_) => None,
+            Self::Analysis(err) => Some(err.as_ref()),
+        }
+    }
+}
+
 impl AnalyzeDependenciesOutcome {
     pub fn any_outdated(&self) -> bool {
         self.crates.iter().any(|(_, deps)| deps.any_outdated())
@@ -91,6 +158,12 @@ impl AnalyzeDependenciesOutcome {
         self.crates
             .iter()
             .any(|(_, deps)| deps.count_insecure() > 0)
+    }
+
+    /// Checks whether any dependency, including development dependencies, has
+    /// vulnerability details that should be rendered.
+    pub fn has_any_vulnerabilities(&self) -> bool {
+        self.any_insecure() || self.count_dev_insecure() > 0
     }
 
     /// Checks if any always insecure main or build dependencies exist in the scanned crates
@@ -156,7 +229,7 @@ impl Engine {
         &self,
         repo_path: RepoPath,
         sub_path: &Option<String>,
-    ) -> Result<AnalyzeDependenciesOutcome, Error> {
+    ) -> Result<AnalyzeDependenciesOutcome, AnalyzeRepoDependenciesError> {
         let start = Instant::now();
 
         let mut entry_point = RelativePath::new("/").to_relative_path_buf();
@@ -167,14 +240,32 @@ impl Engine {
 
         let engine = self.clone();
 
-        let manifest_output = crawl_manifest(self.clone(), repo_path.clone(), entry_point).await?;
+        let manifest_output = crawl_manifest(self.clone(), repo_path.clone(), entry_point)
+            .await
+            .map_err(|err| match err {
+                CrawlManifestError::EntryNotFound => AnalyzeRepoDependenciesError::NotFound,
+                CrawlManifestError::InvalidManifest(err) => {
+                    AnalyzeRepoDependenciesError::InvalidManifest(err)
+                }
+                CrawlManifestError::Upstream(err) => AnalyzeRepoDependenciesError::Upstream(err),
+            })?;
 
         let futures = manifest_output
             .crates
             .into_iter()
             .map(|(crate_name, deps)| async {
-                let analyzed_deps = analyze_dependencies(engine.clone(), deps).await?;
-                Ok::<_, Error>((crate_name, analyzed_deps))
+                let analyzed_deps =
+                    analyze_dependencies(engine.clone(), deps)
+                        .await
+                        .map_err(|err| match err {
+                            AnalyzeDependenciesError::DependencyNotFound(name) => {
+                                AnalyzeRepoDependenciesError::DependencyNotFound(name)
+                            }
+                            AnalyzeDependenciesError::Upstream(err) => {
+                                AnalyzeRepoDependenciesError::Upstream(err)
+                            }
+                        })?;
+                Ok::<_, AnalyzeRepoDependenciesError>((crate_name, analyzed_deps))
             })
             .collect::<Vec<_>>();
 
@@ -195,13 +286,17 @@ impl Engine {
     pub async fn analyze_crate_dependencies(
         &self,
         crate_path: CratePath,
-    ) -> Result<AnalyzeDependenciesOutcome, Error> {
+    ) -> Result<AnalyzeDependenciesOutcome, AnalyzeCrateDependenciesError> {
         let start = Instant::now();
 
         let query_response = self
             .query_crate
             .cached_query(crate_path.name.clone())
-            .await?;
+            .await
+            .map_err(|err| match err {
+                QueryCrateError::NotFound(_) => AnalyzeCrateDependenciesError::CrateNotFound,
+                QueryCrateError::Query(err) => AnalyzeCrateDependenciesError::Analysis(err),
+            })?;
 
         let engine = self.clone();
 
@@ -210,14 +305,19 @@ impl Engine {
             .iter()
             .find(|release| release.version == crate_path.version)
         {
-            None => Err(anyhow!(
-                "could not find crate release with version {}",
-                crate_path.version
-            )),
+            None => Err(AnalyzeCrateDependenciesError::ReleaseNotFound),
 
             Some(release) => {
-                let analyzed_deps =
-                    analyze_dependencies(engine.clone(), release.deps.clone()).await?;
+                let analyzed_deps = analyze_dependencies(engine.clone(), release.deps.clone())
+                    .await
+                    .map_err(|err| match err {
+                        AnalyzeDependenciesError::DependencyNotFound(name) => {
+                            AnalyzeCrateDependenciesError::DependencyNotFound(name)
+                        }
+                        AnalyzeDependenciesError::Upstream(err) => {
+                            AnalyzeCrateDependenciesError::Analysis(err)
+                        }
+                    })?;
 
                 let crates = vec![(crate_path.name, analyzed_deps)];
                 let duration = start.elapsed();
@@ -231,7 +331,7 @@ impl Engine {
         &self,
         name: CrateName,
         req: VersionReq,
-    ) -> Result<Option<CrateRelease>, Error> {
+    ) -> Result<Option<CrateRelease>, QueryCrateError> {
         let query_response = self.query_crate.cached_query(name).await?;
 
         let latest = query_response
@@ -248,7 +348,7 @@ impl Engine {
     fn fetch_releases<'a, I>(
         &'a self,
         names: I,
-    ) -> LocalBoxStream<'a, anyhow::Result<Vec<CrateRelease>>>
+    ) -> LocalBoxStream<'a, Result<Vec<CrateRelease>, QueryCrateError>>
     where
         I: IntoIterator<Item = CrateName>,
         <I as IntoIterator>::IntoIter: Send + 'a,
@@ -267,7 +367,7 @@ impl Engine {
         &self,
         repo_path: &RepoPath,
         path: &RelativePathBuf,
-    ) -> Result<String, Error> {
+    ) -> Result<String, crate::interactors::RetrieveFileError> {
         let manifest_path = path.join(RelativePath::new("Cargo.toml"));
 
         let service = self.retrieve_file_at_path.clone();
@@ -281,7 +381,7 @@ impl Engine {
 
 async fn resolve_crate_with_engine(
     (crate_name, engine): (CrateName, Engine),
-) -> anyhow::Result<Vec<CrateRelease>> {
+) -> Result<Vec<CrateRelease>, QueryCrateError> {
     let crate_res = engine.query_crate.cached_query(crate_name).await?;
     Ok(crate_res.releases)
 }

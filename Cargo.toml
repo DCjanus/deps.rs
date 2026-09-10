@@ -17,6 +17,7 @@ badge = { path = "./libs/badge" }
 actix-web = { version = "4", default-features = false, features = ["macros", "compress-gzip", "compress-zstd", "http2", "unicode", "compat"] }
 actix-web-lab = { version = "0.26", default-features = false }
 anyhow = "1"
+blake3 = "1.8.7"
 crates-index = { version = "3", default-features = false, features = ["git", "git-https-reqwest"] }
 derive_more = { version = "2", features = ["display", "error", "from"] }
 dotenvy = "0.15"
@@ -33,6 +34,7 @@ parking_lot = "0.12"
 pulldown-cmark = "0.13"
 relative-path = { version = "2", features = ["serde"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "json"] }
+rss = { version = "2", features = ["atom"] }
 rustsec = "0.32"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
@@ -42,6 +44,7 @@ tokio = { version = "1.44.2", features = ["rt", "macros", "sync", "time"] }
 toml = { version = "1", default-features = false, features = ["parse", "serde", "preserve_order"] }
 tracing = "0.1.30"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2.5.8"
 
 [build-dependencies]
 grass = { version = "0.13", default-features = false }

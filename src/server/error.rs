@@ -18,11 +18,23 @@ pub(crate) enum ServerError {
     #[display("Could not parse crate path")]
     BadCratePath,
 
-    #[display("Could not fetch crate information")]
-    CrateFetchFailed,
-
     #[display("Could not parse repository path")]
     BadRepoPath,
+
+    #[display("Dependency analysis is temporarily unavailable")]
+    AnalysisUnavailable,
+
+    #[display("Repository manifest not found")]
+    RepoNotFound,
+
+    #[display("Repository manifest could not be analyzed")]
+    RepoManifestInvalid,
+
+    #[display("Dependency crate not found")]
+    DependencyNotFound,
+
+    #[display("An upstream dependency is temporarily unavailable")]
+    DependencyUpstreamUnavailable,
 
     #[display("Crate/repo analysis failed")]
     AnalysisFailed(Markup),
@@ -34,8 +46,12 @@ impl ResponseError for ServerError {
             ServerError::PopularItemsFailed => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::CrateNotFound => StatusCode::NOT_FOUND,
             ServerError::BadCratePath => StatusCode::BAD_REQUEST,
-            ServerError::CrateFetchFailed => StatusCode::NOT_FOUND,
             ServerError::BadRepoPath => StatusCode::BAD_REQUEST,
+            ServerError::AnalysisUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+            ServerError::RepoNotFound => StatusCode::NOT_FOUND,
+            ServerError::RepoManifestInvalid => StatusCode::UNPROCESSABLE_ENTITY,
+            ServerError::DependencyNotFound => StatusCode::UNPROCESSABLE_ENTITY,
+            ServerError::DependencyUpstreamUnavailable => StatusCode::BAD_GATEWAY,
             ServerError::AnalysisFailed(_) => StatusCode::BAD_REQUEST,
         }
     }
@@ -57,14 +73,6 @@ impl ResponseError for ServerError {
                 .0,
             ),
 
-            ServerError::CrateFetchFailed => res.body(
-                render(
-                    self.to_string(),
-                    "Please make sure to provide a valid crate name.",
-                )
-                .0,
-            ),
-
             ServerError::BadRepoPath => res.body(
                 render(
                     self.to_string(),
@@ -72,6 +80,32 @@ impl ResponseError for ServerError {
                 )
                 .0,
             ),
+
+            ServerError::AnalysisUnavailable => {
+                res.body(render(self.to_string(), "Please try again later.").0)
+            }
+
+            ServerError::RepoNotFound => res.body(render_404().0),
+
+            ServerError::RepoManifestInvalid => res.body(
+                render(
+                    self.to_string(),
+                    "Please check the repository path and Cargo manifests.",
+                )
+                .0,
+            ),
+
+            ServerError::DependencyNotFound => res.body(
+                render(
+                    self.to_string(),
+                    "Please check the dependency names in the Cargo manifests.",
+                )
+                .0,
+            ),
+
+            ServerError::DependencyUpstreamUnavailable => {
+                res.body(render(self.to_string(), "Please try again later.").0)
+            }
 
             Self::AnalysisFailed(html) => res.body(html.0.clone()),
         }

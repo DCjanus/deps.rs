@@ -35,6 +35,23 @@ Badges have a few options, specified with query parameters:
   - `?subject=git%20deps`
   - `?subject=deps%3Acore`
 
+## RSS feeds
+
+Dependency status pages expose an RSS 2.0 feed through the RSS icon and HTML feed discovery. Feed URLs mirror their status pages:
+
+- repository: `https://deps.rs/repo/<HOSTER>/<USER>/<REPO>/feed.xml`
+- repository subdirectory: append `?path=<PATH>`
+- latest crate release: `https://deps.rs/crate/<NAME>/latest/feed.xml`
+- pinned crate release: `https://deps.rs/crate/<NAME>/<VERSION>/feed.xml`
+
+Each item represents a currently outdated or insecure dependency entry produced by the existing deps.rs analysis model. This is not necessarily a one-to-one representation of source declarations: aliases or target-specific declarations that resolve to the same package and dependency kind may be coalesced by the current manifest analysis.
+
+Feeds are snapshots, not event logs: resolved issues disappear, recovery notifications are not emitted, and changes that appear and disappear between polls can be missed. If an issue disappears and later returns with exactly the same identity, its GUID is reused, so readers that remember previously seen GUIDs may not notify again. A new version alone does not create another item for a dependency that is already outdated. Changes to the version requirement, a new RustSec advisory, or a change between possibly insecure and insecure produce a new item identity.
+
+Item GUIDs use a versioned identity contract. Changing the meaning of the current `v1` identity is a compatibility change because subscribers may treat it as a new notification.
+
+Feeds suggest an hourly refresh interval and may be served from a shared cache for up to five minutes.
+
 ## Contributing
 
 We are always looking for help from the community! Feel like a feature is missing? Found a bug? [Open an issue](https://github.com/deps-rs/deps.rs/issues/new)!
