@@ -509,3 +509,43 @@ impl From<BadgeStyleParam> for Style {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_supported_badge_styles() {
+        let styles = [
+            ("plastic", Style::Plastic),
+            ("flat", Style::Flat),
+            ("flat-square", Style::FlatSquare),
+            ("for-the-badge", Style::ForTheBadge),
+            ("social", Style::Social),
+        ];
+
+        for (query_value, expected) in styles {
+            let config = ExtraConfig::from_query_string(Some(&format!("style={query_value}")));
+            assert_eq!(config.style, expected);
+        }
+    }
+
+    #[test]
+    fn invalid_badge_style_falls_back_to_flat() {
+        let config = ExtraConfig::from_query_string(Some("style=unknown"));
+        assert_eq!(config.style, Style::Flat);
+    }
+
+    #[test]
+    fn resolves_badge_subject() {
+        assert_eq!(ExtraConfig::default().subject(), "dependencies");
+        assert_eq!(
+            ExtraConfig::from_query_string(Some("compact=true")).subject(),
+            "deps"
+        );
+        assert_eq!(
+            ExtraConfig::from_query_string(Some("compact=true&subject=workspace%20deps")).subject(),
+            "workspace deps"
+        );
+    }
+}

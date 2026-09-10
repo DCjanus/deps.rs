@@ -135,3 +135,44 @@ pub fn response(
         .insert_header(ContentType(mime::IMAGE_SVG))
         .body(badge)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn renders_every_supported_badge_style() {
+        let styles = [
+            ("plastic", "dependencies: unknown"),
+            ("flat", "dependencies: unknown"),
+            ("flat-square", "dependencies: unknown"),
+            ("for-the-badge", "DEPENDENCIES: UNKNOWN"),
+            ("social", "Dependencies: unknown"),
+        ];
+        let svgs = styles.map(|(style, accessible_text)| {
+            let svg = render_svg(
+                None,
+                ExtraConfig::from_query_string(Some(&format!("style={style}"))),
+            );
+            assert!(svg.starts_with("<svg "));
+            assert!(svg.contains(&format!("aria-label=\"{accessible_text}\"")));
+            svg
+        });
+
+        assert_eq!(svgs.iter().collect::<HashSet<_>>().len(), svgs.len());
+    }
+
+    #[test]
+    fn escapes_custom_subject_in_svg() {
+        let svg = render_svg(
+            None,
+            ExtraConfig::from_query_string(Some("subject=deps%20%26%20tools")),
+        );
+
+        assert!(svg.contains("aria-label=\"deps &amp; tools: unknown\""));
+        assert!(svg.contains("deps &amp; tools"));
+        assert!(!svg.contains("deps & tools"));
+    }
+}
