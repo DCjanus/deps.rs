@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use badge::{Badge, BadgeOptions as OldOptions, BadgeStyle};
 use badge_maker_rs::{BadgeOptions as NewOptions, Color, Style, make_badge};
 use clap::Parser;
@@ -43,8 +43,14 @@ struct Metrics {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    fs::create_dir_all(&args.output)
-        .with_context(|| format!("create {}", args.output.display()))?;
+    if args.output.exists() {
+        if args.output.read_dir()?.next().is_some() {
+            bail!("output directory is not empty: {}", args.output.display());
+        }
+    } else {
+        fs::create_dir_all(&args.output)
+            .with_context(|| format!("create {}", args.output.display()))?;
+    }
 
     let mut cases = Vec::new();
     let statuses = [
