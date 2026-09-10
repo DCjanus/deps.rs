@@ -67,9 +67,7 @@ impl RetrieveFileAtPath {
         match res.status() {
             status if status.is_success() => {}
             reqwest::StatusCode::NOT_FOUND => return Err(RetrieveFileError::NotFound(url)),
-            status
-                if status.is_client_error() && status != reqwest::StatusCode::TOO_MANY_REQUESTS =>
-            {
+            status if status.is_client_error() && !is_retryable_status(status) => {
                 return Err(RetrieveFileError::Rejected { status, url });
             }
             status => {
@@ -83,6 +81,15 @@ impl RetrieveFileAtPath {
             .await
             .map_err(|err| RetrieveFileError::Unavailable(err.into()))
     }
+}
+
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::REQUEST_TIMEOUT
+            | reqwest::StatusCode::TOO_EARLY
+            | reqwest::StatusCode::TOO_MANY_REQUESTS
+    ) || status.is_server_error()
 }
 
 impl Service<(RepoPath, RelativePathBuf)> for RetrieveFileAtPath {
@@ -101,5 +108,25 @@ impl Service<(RepoPath, RelativePathBuf)> for RetrieveFileAtPath {
 impl fmt::Debug for RetrieveFileAtPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("RetrieveFileAtPath")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retryable_http_statuses_include_transient_client_responses() {
+        for status in [408, 425, 429, 500, 503] {
+            assert!(is_retryable_status(
+                reqwest::StatusCode::from_u16(status).unwrap()
+            ));
+        }
+
+        for status in [400, 401, 403, 404, 422] {
+            assert!(!is_retryable_status(
+                reqwest::StatusCode::from_u16(status).unwrap()
+            ));
+        }
     }
 }

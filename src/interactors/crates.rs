@@ -1,7 +1,7 @@
 use std::{fmt, str};
 
 use actix_web::dev::Service;
-use anyhow::{Error, anyhow};
+use anyhow::Error;
 use crates_index::{Crate, DependencyKind};
 use futures_util::{FutureExt as _, future::LocalBoxFuture};
 use semver::{Version, VersionReq};
@@ -14,6 +14,30 @@ use crate::{
 };
 
 const CRATES_API_BASE_URI: &str = "https://crates.io/api/v1";
+
+#[derive(Debug)]
+pub enum QueryCrateError {
+    NotFound(CrateName),
+    Query(Error),
+}
+
+impl fmt::Display for QueryCrateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound(name) => write!(f, "crate '{}' not found", name.as_ref()),
+            Self::Query(err) => write!(f, "could not query crate index: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for QueryCrateError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::NotFound(_) => None,
+            Self::Query(err) => Some(err.as_ref()),
+        }
+    }
+}
 
 fn convert_pkgs(krate: Crate) -> Result<QueryCrateResponse, Error> {
     let name: CrateName = krate.name().parse()?;
@@ -64,13 +88,14 @@ impl QueryCrate {
     pub async fn query(
         index: ManagedIndex,
         crate_name: CrateName,
-    ) -> anyhow::Result<QueryCrateResponse> {
+    ) -> Result<QueryCrateResponse, QueryCrateError> {
         let crate_name2 = crate_name.clone();
         let krate = spawn_blocking(move || index.crate_(crate_name2))
-            .await?
-            .ok_or_else(|| anyhow!("crate '{}' not found", crate_name.as_ref()))?;
+            .await
+            .map_err(|err| QueryCrateError::Query(err.into()))?
+            .ok_or_else(|| QueryCrateError::NotFound(crate_name))?;
 
-        convert_pkgs(krate)
+        convert_pkgs(krate).map_err(QueryCrateError::Query)
     }
 }
 
@@ -82,7 +107,7 @@ impl fmt::Debug for QueryCrate {
 
 impl Service<CrateName> for QueryCrate {
     type Response = QueryCrateResponse;
-    type Error = Error;
+    type Error = QueryCrateError;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     actix_web::dev::always_ready!();

@@ -20,7 +20,7 @@ use crate::{
     ManagedIndex,
     interactors::{
         RetrieveFileAtPath,
-        crates::{GetPopularCrates, QueryCrate},
+        crates::{GetPopularCrates, QueryCrate, QueryCrateError},
         github::GetPopularRepos,
         rustsec::FetchAdvisoryDatabase,
     },
@@ -83,6 +83,7 @@ pub struct AnalyzeDependenciesOutcome {
 
 #[derive(Debug)]
 pub enum AnalyzeCrateDependenciesError {
+    CrateNotFound,
     ReleaseNotFound,
     Analysis(Error),
 }
@@ -116,6 +117,7 @@ impl std::error::Error for AnalyzeRepoDependenciesError {
 impl fmt::Display for AnalyzeCrateDependenciesError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::CrateNotFound => f.write_str("crate not found"),
             Self::ReleaseNotFound => f.write_str("crate release not found"),
             Self::Analysis(err) => write!(f, "crate analysis failed: {err}"),
         }
@@ -125,7 +127,7 @@ impl fmt::Display for AnalyzeCrateDependenciesError {
 impl std::error::Error for AnalyzeCrateDependenciesError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::ReleaseNotFound => None,
+            Self::CrateNotFound | Self::ReleaseNotFound => None,
             Self::Analysis(err) => Some(err.as_ref()),
         }
     }
@@ -269,7 +271,10 @@ impl Engine {
             .query_crate
             .cached_query(crate_path.name.clone())
             .await
-            .map_err(AnalyzeCrateDependenciesError::Analysis)?;
+            .map_err(|err| match err {
+                QueryCrateError::NotFound(_) => AnalyzeCrateDependenciesError::CrateNotFound,
+                QueryCrateError::Query(err) => AnalyzeCrateDependenciesError::Analysis(err),
+            })?;
 
         let engine = self.clone();
 
@@ -297,7 +302,7 @@ impl Engine {
         &self,
         name: CrateName,
         req: VersionReq,
-    ) -> Result<Option<CrateRelease>, Error> {
+    ) -> Result<Option<CrateRelease>, QueryCrateError> {
         let query_response = self.query_crate.cached_query(name).await?;
 
         let latest = query_response

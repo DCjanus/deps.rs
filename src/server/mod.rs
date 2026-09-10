@@ -34,6 +34,7 @@ use crate::{
         AnalyzeCrateDependenciesError, AnalyzeDependenciesOutcome, AnalyzeRepoDependenciesError,
         Engine,
     },
+    interactors::crates::QueryCrateError,
     models::{
         SubjectPath,
         crates::{CrateName, CratePath},
@@ -123,6 +124,23 @@ fn repo_feed_error(err: AnalyzeRepoDependenciesError) -> ServerError {
     }
 }
 
+fn crate_query_error(err: QueryCrateError) -> ServerError {
+    tracing::error!(%err);
+    match err {
+        QueryCrateError::NotFound(_) => ServerError::CrateNotFound,
+        QueryCrateError::Query(_) => ServerError::AnalysisUnavailable,
+    }
+}
+
+fn crate_analysis_error(err: AnalyzeCrateDependenciesError) -> ServerError {
+    tracing::error!(%err);
+    match err {
+        AnalyzeCrateDependenciesError::CrateNotFound
+        | AnalyzeCrateDependenciesError::ReleaseNotFound => ServerError::CrateNotFound,
+        AnalyzeCrateDependenciesError::Analysis(_) => ServerError::AnalysisUnavailable,
+    }
+}
+
 #[get("/repo/{site:.+?}/{qual}/{name}")]
 pub(crate) async fn repo_status_html(
     ThinData(engine): ThinData<Engine>,
@@ -204,8 +222,12 @@ async fn crate_redirect(
             tracing::error!(%err);
         });
 
-    let Ok(Some(release)) = release_result else {
-        return Err(ServerError::CrateFetchFailed.into());
+    let release = match release_result {
+        Ok(Some(release)) => release,
+        Ok(None) | Err(QueryCrateError::NotFound(_)) => {
+            return Err(ServerError::CrateNotFound.into());
+        }
+        Err(err) => return Err(crate_query_error(err).into()),
     };
 
     let redirect_url = crate_default_redirect_url(&release);
@@ -313,10 +335,7 @@ async fn crate_status_feed(
             {
                 Ok(Some(release)) => release.version.to_string(),
                 Ok(None) => return Err(ServerError::CrateNotFound.into()),
-                Err(err) => {
-                    tracing::error!(%err);
-                    return Err(ServerError::AnalysisUnavailable.into());
-                }
+                Err(err) => return Err(crate_query_error(err).into()),
             }
         }
     };
@@ -326,13 +345,7 @@ async fn crate_status_feed(
     })?;
     let analysis = match engine.analyze_crate_dependencies(crate_path.clone()).await {
         Ok(analysis) => analysis,
-        Err(AnalyzeCrateDependenciesError::ReleaseNotFound) => {
-            return Err(ServerError::CrateNotFound.into());
-        }
-        Err(AnalyzeCrateDependenciesError::Analysis(err)) => {
-            tracing::error!(%err);
-            return Err(ServerError::AnalysisUnavailable.into());
-        }
+        Err(err) => return Err(crate_analysis_error(err).into()),
     };
     let subject = if latest_route {
         views::feed::FeedSubject::crate_latest(crate_path)
@@ -367,10 +380,7 @@ async fn crate_status(
 
                 Ok(None) => return Err(ServerError::CrateNotFound.into()),
 
-                Err(err) => {
-                    tracing::error!(%err);
-                    return Err(ServerError::CrateFetchFailed.into());
-                }
+                Err(err) => return Err(crate_query_error(err).into()),
             }
         }
     };
@@ -630,6 +640,30 @@ mod tests {
             )))
             .status_code(),
             StatusCode::BAD_GATEWAY
+        );
+    }
+
+    #[test]
+    fn crate_feed_errors_distinguish_missing_crates_from_analysis_failures() {
+        assert_eq!(
+            crate_query_error(QueryCrateError::NotFound("missing".parse().unwrap())).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            crate_query_error(QueryCrateError::Query(anyhow::anyhow!("index failure")))
+                .status_code(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            crate_analysis_error(AnalyzeCrateDependenciesError::CrateNotFound).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            crate_analysis_error(AnalyzeCrateDependenciesError::Analysis(anyhow::anyhow!(
+                "analysis failure"
+            )))
+            .status_code(),
+            StatusCode::SERVICE_UNAVAILABLE
         );
     }
 

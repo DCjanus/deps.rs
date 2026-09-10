@@ -18,9 +18,6 @@ pub(crate) enum ServerError {
     #[display("Could not parse crate path")]
     BadCratePath,
 
-    #[display("Could not fetch crate information")]
-    CrateFetchFailed,
-
     #[display("Could not parse repository path")]
     BadRepoPath,
 
@@ -46,7 +43,6 @@ impl ResponseError for ServerError {
             ServerError::PopularItemsFailed => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::CrateNotFound => StatusCode::NOT_FOUND,
             ServerError::BadCratePath => StatusCode::BAD_REQUEST,
-            ServerError::CrateFetchFailed => StatusCode::NOT_FOUND,
             ServerError::BadRepoPath => StatusCode::BAD_REQUEST,
             ServerError::AnalysisUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             ServerError::RepoNotFound => StatusCode::NOT_FOUND,
@@ -69,14 +65,6 @@ impl ResponseError for ServerError {
                 render(
                     self.to_string(),
                     "Please make sure to provide a valid crate name and version.",
-                )
-                .0,
-            ),
-
-            ServerError::CrateFetchFailed => res.body(
-                render(
-                    self.to_string(),
-                    "Please make sure to provide a valid crate name.",
                 )
                 .0,
             ),
