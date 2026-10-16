@@ -46,3 +46,7 @@ base64 = "0.22.1"
 [build-dependencies]
 grass = { version = "0.13", default-features = false }
 sha-1 = "0.10"
+
+[dev-dependencies]
+resvg = "0.48.1"
+serde_json = "1.0.154"
