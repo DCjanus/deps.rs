@@ -39,6 +39,9 @@ Badges have a few options, specified with query parameters:
 
 ## Contributing
 
+For reproducible comparisons of deps.rs badges against the official Shields
+renderer, see [the badge parity suite](tools/badge-parity/README.md).
+
 We are always looking for help from the community! Feel like a feature is missing? Found a bug? [Open an issue](https://github.com/deps-rs/deps.rs/issues/new)!
 
 Do you want to contribute? Then browse the [list](https://github.com/deps-rs/deps.rs/issues) of open issues and ask if you can take care of it.

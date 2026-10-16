@@ -5,6 +5,9 @@ use serde::Serialize;
 
 use crate::{engine::AnalyzeDependenciesOutcome, server::ExtraConfig};
 
+#[cfg(test)]
+mod parity;
+
 fn badge(
     analysis_outcome: Option<&AnalyzeDependenciesOutcome>,
     badge_knobs: ExtraConfig,
